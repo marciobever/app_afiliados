@@ -386,7 +386,7 @@ postauto`}
           onChange={(e) => setText(e.target.value)}
         />
         <p className="text-xs text-[#6B7280] mt-2">
-          Ex.: <code>main_channel</code>, <code>sub_channel</code>, <code>{{`{item_id}`}}</code>, <code>{{`{exec}`}}</code>, <code>postauto</code>.
+          Ex.: <code>main_channel</code>, <code>sub_channel</code>, <code>{'{'}item_id{'}'}</code>, <code>{'{'}exec{'}'}</code>, <code>postauto</code>.
         </p>
         <div className="mt-5 flex justify-end">
           <Button onClick={save} disabled={saving}>
