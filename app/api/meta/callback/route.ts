@@ -128,17 +128,38 @@ export async function GET(req: NextRequest) {
         ? (longJson.expires_in as number)
         : shortExpiresIn ?? null;
 
-    // 4) upsert no Supabase
+    // 4) buscar conta Instagram Business vinculada
+    let instagramBusinessId: string | null = null;
+    let instagramUsername: string | null = null;
+
+    try {
+      const pagesRes = await fetch(
+        `https://graph.facebook.com/me/accounts?fields=instagram_business_account{id,username}&access_token=${longToken}`,
+        { method: "GET" }
+      );
+      const pagesJson = await pagesRes.json();
+      const ig = pagesJson?.data?.[0]?.instagram_business_account;
+      if (ig) {
+        instagramBusinessId = ig.id || null;
+        instagramUsername = ig.username || null;
+      }
+    } catch (err) {
+      console.warn("Falha ao buscar Instagram business ID:", err);
+    }
+
+    // 5) upsert no Supabase
     const sb = supabaseAdmin();
     const payload = {
-      user_id: userId,       // UUID
-      org_id: orgId,         // text
-      provider: "meta",      // text
-      meta_user_id: metaUserId, // text
-      access_token: longToken,  // text
-      granted_scopes: grantedScopes, // jsonb (ou text[])
-      obtained_at: new Date().toISOString(), // timestamptz
-      expires_in: longExpiresIn, // int4
+      user_id: userId,
+      org_id: orgId,
+      provider: "meta",
+      meta_user_id: metaUserId,
+      access_token: longToken,
+      granted_scopes: grantedScopes,
+      obtained_at: new Date().toISOString(),
+      expires_in: longExpiresIn,
+      instagram_business_id: instagramBusinessId,
+      instagram_username: instagramUsername,
     };
 
     const { error: upsertErr } = await sb
@@ -147,7 +168,13 @@ export async function GET(req: NextRequest) {
 
     if (upsertErr) return html("Erro ao salvar no Supabase: " + upsertErr.message);
 
-    return html(`✅ Conexão com Meta concluída!<br/>Você já pode fechar esta janela.`);
+    return html(
+      `✅ Conexão com Meta concluída!<br/>` +
+        (instagramUsername
+          ? `Instagram conectado: <b>@${instagramUsername}</b><br/>`
+          : "") +
+        `Você já pode fechar esta janela.`
+    );
   } catch (e: any) {
     return html("Erro inesperado: " + (e?.message || String(e)));
   }
