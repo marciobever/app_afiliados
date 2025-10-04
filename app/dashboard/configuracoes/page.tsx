@@ -3,12 +3,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Settings, Store, Network, CheckCircle2, Loader2, Eye, EyeOff } from 'lucide-react';
 
-/* =========================================================================
-   CONFIGURAÇÕES — UI focada no essencial (Shopee + Instagram/Meta)
-   - Layout responsivo, limpo e consistente com o tema
-   - Salva e carrega tudo do backend (Supabase via APIs do app)
-   ========================================================================= */
-
 type TabKey = 'plataformas' | 'redes';
 
 /* ----------------------------- Helpers --------------------------------- */
@@ -16,7 +10,7 @@ function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
 function toast(msg: string) {
-  alert(msg); // Simples; troque por um toaster se quiser
+  alert(msg);
 }
 function normSubIdsFromText(text: string) {
   return text
@@ -54,9 +48,7 @@ function CardHeader({
     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between p-5 border-b border-[#FFD9CF]">
       <div>
         <h3 className="font-semibold text-base">{title}</h3>
-        {subtitle ? (
-          <p className="text-sm text-[#6B7280] mt-0.5">{subtitle}</p>
-        ) : null}
+        {subtitle ? <p className="text-sm text-[#6B7280] mt-0.5">{subtitle}</p> : null}
       </div>
       {right}
     </div>
@@ -190,7 +182,7 @@ function ShopeeCredentialsCard() {
           setActive(Boolean(j.credentials.active));
         }
       } catch {
-        // silencia
+        /* noop */
       } finally {
         setLoading(false);
       }
@@ -203,19 +195,14 @@ function ShopeeCredentialsCard() {
       const r = await fetch('/api/integrations/shopee/credentials', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appId,
-          secret,
-          region,
-          active,
-        }),
+        body: JSON.stringify({ appId, secret, region, active }),
       });
       const j = await r.json();
       if (!r.ok || j?.error) {
         toast(j?.error || 'Falha ao salvar credenciais.');
       } else {
         toast('Credenciais da Shopee salvas!');
-        setSecret(''); // não reter em memória/DOM
+        setSecret('');
       }
     } catch (e: any) {
       toast(e?.message || 'Erro ao salvar');
@@ -311,15 +298,32 @@ function ShopeeSubIdsCard() {
   const [saving, setSaving] = useState(false);
   const [text, setText] = useState('');
 
+  // normaliza qualquer formato vindo da API (array OU objeto)
+  function normalizeIncomingSubids(raw: any): string[] {
+    if (Array.isArray(raw)) return raw;
+    if (raw && typeof raw === 'object') {
+      const {
+        main_channel = '',
+        sub_channel = '',
+        extra_1 = '',
+        extra_2 = '',
+      } = raw;
+      // placeholders comuns ocupam slots 3/4
+      return [main_channel, sub_channel, '{{item_id}}', '{{exec}}', extra_1 || extra_2 || ''];
+    }
+    return [];
+  }
+
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
         const r = await fetch('/api/integrations/shopee/subids', { cache: 'no-store' });
         const j = await r.json();
-        if (Array.isArray(j?.subids)) setText(subIdsToText(j.subids));
+        const list = normalizeIncomingSubids(j?.subids);
+        setText(subIdsToText(list));
       } catch {
-        // silencia
+        /* noop */
       } finally {
         setLoading(false);
       }
@@ -331,11 +335,18 @@ function ShopeeSubIdsCard() {
   async function save() {
     setSaving(true);
     try {
-      const subids = normSubIdsFromText(text);
+      const list = normSubIdsFromText(text);
+      // mapeia para objeto também (backend pode aceitar ambos)
+      const obj = {
+        main_channel: list[0] || '',
+        sub_channel: list[1] || '',
+        extra_1: list[4] || '',
+        extra_2: '',
+      };
       const r = await fetch('/api/integrations/shopee/subids', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subids }),
+        body: JSON.stringify({ subids: list, ...obj }),
       });
       const j = await r.json();
       if (!r.ok || j?.error) toast(j?.error || 'Falha ao salvar SubIDs');
@@ -351,7 +362,7 @@ function ShopeeSubIdsCard() {
     <Card>
       <CardHeader
         title="Shopee — SubIDs"
-        subtitle="Defina até 5 SubIDs (um por linha). Você pode usar placeholders dinâmicos como {{item_id}} e {{exec}}."
+        subtitle="Até 5 SubIDs (um por linha). Suporta placeholders: {{item_id}} e {{exec}}."
         right={
           loading ? (
             <div className="flex items-center gap-2 text-sm text-[#6B7280]">
@@ -375,7 +386,7 @@ postauto`}
           onChange={(e) => setText(e.target.value)}
         />
         <p className="text-xs text-[#6B7280] mt-2">
-          Dica: placeholders serão preenchidos automaticamente quando gerar links/postagens.
+          Ex.: <code>main_channel</code>, <code>sub_channel</code>, <code>{{`{item_id}`}}</code>, <code>{{`{exec}`}}</code>, <code>postauto</code>.
         </p>
         <div className="mt-5 flex justify-end">
           <Button onClick={save} disabled={saving}>
@@ -562,19 +573,16 @@ export default function ConfiguracoesPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 pb-10 space-y-6">
-      {/* Header */}
       <div className="pt-4 sm:pt-6">
         <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-3">
           <Settings className="w-7 h-7 text-[#EE4D2D]" />
           Configurações
         </h1>
         <p className="text-sm text-[#6B7280] mt-1">
-          Conecte suas plataformas e redes sociais. Tudo o que você salvar aqui
-          será usado na busca de produtos e nas publicações automatizadas.
+          Conecte suas plataformas e redes sociais. O que você salvar aqui será usado na busca de produtos e nas publicações.
         </p>
       </div>
 
-      {/* Tabs */}
       <Tabs
         value={tab}
         onChange={setTab}
@@ -584,7 +592,6 @@ export default function ConfiguracoesPage() {
         ]}
       />
 
-      {/* Conteúdo */}
       {tab === 'plataformas' ? (
         <div className="grid gap-6">
           <ShopeeCredentialsCard />
