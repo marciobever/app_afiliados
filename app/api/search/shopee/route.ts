@@ -1,31 +1,48 @@
+// app/api/search/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { postN8N } from "@/lib/n8n";
 import { getUserContext } from "@/lib/auth";
 
-// Este endpoint evita expor o host do n8n ao cliente
+/**
+ * API segura para busca — faz proxy para o n8n sem expor o host.
+ * Lê userId/orgId do cookie de sessão (getUserContext).
+ */
 export async function POST(req: NextRequest) {
-  const { userId, orgId } = getUserContext(); // <- sem argumentos
-  if (!userId || !orgId) {
+  // Lê usuário logado do cookie JWT
+  const { userId, orgId } = getUserContext();
+
+  if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // Lê o corpo da requisição
   const body = await req.json().catch(() => ({} as any));
+
+  // Monta o payload para o n8n
   const payload = {
-    orgId,
     userId,
+    orgId: orgId ?? "default",
     query: body.query || "",
     filters: body.filters || { limit: 24 },
     sort: body.sort || "relevance",
     country: body.country || "BR",
-    // opcional: channels
-    // channels: body.channels ?? [["mina","insta"], ["mina","reels"]]
+    // opcional: canais
+    // channels: body.channels ?? [["mina","insta"], ["mina","reels"]],
   };
 
-  // webhook do n8n (ajuste o path se for diferente)
-  const data = await postN8N<{ items: any[]; cursor?: string | null }>(
-    "/webhook/shopee_search",
-    payload
-  );
+  try {
+    // Envia para o webhook do n8n
+    const data = await postN8N<{ items: any[]; cursor?: string | null }>(
+      "/webhook/shopee_search",
+      payload
+    );
 
-  return NextResponse.json(data);
+    return NextResponse.json(data);
+  } catch (err: any) {
+    console.error("Erro ao consultar n8n:", err);
+    return NextResponse.json(
+      { error: "n8n_request_failed", detail: err?.message || err },
+      { status: 500 }
+    );
+  }
 }
