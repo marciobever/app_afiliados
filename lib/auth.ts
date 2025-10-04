@@ -9,18 +9,23 @@ const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
 
 export type SessionPayload = {
   userId: string; // sempre UUID agora
-  orgId: string;  // ex.: "default"
+  orgId: string;  // ex.: "default" ou ID real da org
 };
 
+/* -------------------------------------------------------
+ * Criação e verificação de tokens de sessão
+ * ----------------------------------------------------- */
+
+/** Cria um JWT com validade de 30 dias */
 export function createSessionToken(payload: SessionPayload) {
   return jwt.sign(payload, APP_SESSION_SECRET, { expiresIn: "30d" });
 }
 
+/** Verifica e decodifica o JWT */
 export function verifySessionToken(token: string): SessionPayload {
-  // compat: caso versões antigas tenham usado { userIdNorm, orgId }
   const raw = jwt.verify(token, APP_SESSION_SECRET) as
     | SessionPayload
-    | { userIdNorm?: string; orgId: string };
+    | { userIdNorm?: string; orgId?: string };
 
   const userId =
     (raw as any).userId ??
@@ -33,10 +38,14 @@ export function verifySessionToken(token: string): SessionPayload {
   return { userId, orgId };
 }
 
-/** Seta cookie de sessão na resposta */
+/* -------------------------------------------------------
+ * Manipulação de cookies
+ * ----------------------------------------------------- */
+
+/** Cria e grava o cookie de sessão seguro */
 export function createSessionCookie(res: NextResponse, payload: SessionPayload) {
   const token = createSessionToken(payload);
-  // @ts-ignore NextResponse tem .cookies.set no runtime
+  // @ts-ignore NextResponse.cookies existe em runtime
   res.cookies.set({
     name: COOKIE_NAME,
     value: token,
@@ -45,11 +54,11 @@ export function createSessionCookie(res: NextResponse, payload: SessionPayload) 
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 30, // 30 dias
-    domain: COOKIE_DOMAIN, // ex.: app.seureview.com.br (opcional)
+    domain: COOKIE_DOMAIN, // ex.: .receitapopular.com.br
   });
 }
 
-/** Apaga cookie de sessão */
+/** Apaga o cookie de sessão */
 export function clearSessionCookie(res: NextResponse) {
   // @ts-ignore
   res.cookies.set({
@@ -64,10 +73,23 @@ export function clearSessionCookie(res: NextResponse) {
   });
 }
 
-/** Lê user/org do cookie (server-side) */
-export function getUserContext(): SessionPayload {
-  const c = cookies();
-  const token = c.get(COOKIE_NAME)?.value;
-  if (!token) throw new Error("no_session");
-  return verifySessionToken(token);
+/* -------------------------------------------------------
+ * Leitura segura da sessão no server-side
+ * ----------------------------------------------------- */
+
+/**
+ * Retorna o userId/orgId da sessão atual.
+ * Nunca lança erro — devolve { userId: null, orgId: null } se inválido.
+ */
+export function getUserContext():
+  | SessionPayload
+  | { userId: null; orgId: null } {
+  try {
+    const c = cookies();
+    const token = c.get(COOKIE_NAME)?.value;
+    if (!token) throw new Error("no_session");
+    return verifySessionToken(token);
+  } catch {
+    return { userId: null, orgId: null };
+  }
 }
