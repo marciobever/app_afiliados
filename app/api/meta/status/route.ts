@@ -27,6 +27,9 @@ export async function GET() {
       expires_in: data?.expires_in ?? null,
     });
   } catch (e: any) {
-    return NextResponse.json({ connected: false, error: e?.message || "auth_error" }, { status: 200 });
+    return NextResponse.json(
+      { connected: false, error: e?.message || "auth_error" },
+      { status: 200 }
+    );
   }
 }
