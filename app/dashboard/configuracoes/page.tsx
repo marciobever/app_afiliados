@@ -1,28 +1,20 @@
 'use client';
 
 import React, { useEffect, useState } from "react";
-import { Settings, Store, Cog, ShieldCheck, Palette, CalendarClock, Network } from "lucide-react";
+import { Settings, Store, Palette, CalendarClock, Network } from "lucide-react";
 
-/**
- * Configurações — organizado por abas:
- * - Plataformas (Shopee, Amazon, Mercado Livre)
- * - Redes Sociais (Instagram, Facebook)
- * - Branding (cores, logo, fontes)
- * - Publicação (agendamento, formatos)
- * - Integrações (Supabase, n8n)
- * - Segurança (chaves, permissões)
- *
- * Puro Tailwind, UI consistente com o tema Shopee
- */
+/** =========================================================
+ *  UI BÁSICA PARA USUÁRIO FINAL
+ *  - Plataformas (somente Shopee, campos simples)
+ *  - Redes Sociais (Instagram/Facebook + MetaConnect)
+ *  - Branding (cores/logo/fonte)
+ *  - Publicação (frequência e janela)
+ *  Nada de n8n, Supabase, chaves, etc.
+ *  ======================================================= */
 
-type TabKey =
-  | "plataformas"
-  | "redes"
-  | "branding"
-  | "publicacao"
-  | "integracoes"
-  | "seguranca";
+type TabKey = "plataformas" | "redes" | "branding" | "publicacao";
 
+/* ----------------- Pequenos componentes de UI ----------------- */
 function Tabs({
   value,
   onChange,
@@ -34,7 +26,7 @@ function Tabs({
 }) {
   return (
     <div className="w-full">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 rounded-xl overflow-hidden border border-[#FFD9CF] bg-white">
+      <div className="grid grid-cols-2 sm:grid-cols-4 rounded-xl overflow-hidden border border-[#FFD9CF] bg-white">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -145,7 +137,7 @@ function SaveBar({
   );
 }
 
-/** ---------- Botão/Status de conexão com Meta ---------- */
+/** ---------- Status/Conexão com Meta (simples) ---------- */
 function MetaConnect() {
   const [status, setStatus] = useState<null | { connected: boolean; meta_user_id?: string; error?: string }>(null);
   const [loading, setLoading] = useState(false);
@@ -155,7 +147,7 @@ function MetaConnect() {
       const r = await fetch("/api/meta/status", { cache: "no-store" });
       const j = await r.json();
       setStatus(j);
-    } catch (e) {
+    } catch {
       setStatus({ connected: false, error: "Falha ao consultar status" });
     }
   }
@@ -173,7 +165,6 @@ function MetaConnect() {
     setLoading(true);
     try {
       window.open("/api/meta/login", "meta_login", "width=680,height=760");
-      // fallback caso não receba postMessage
       setTimeout(refresh, 5000);
     } finally {
       setLoading(false);
@@ -201,6 +192,7 @@ function MetaConnect() {
   );
 }
 
+/* ----------------- Página ----------------- */
 export default function ConfiguracoesPage() {
   const [tab, setTab] = useState<TabKey>("plataformas");
 
@@ -212,7 +204,7 @@ export default function ConfiguracoesPage() {
           <Settings className="w-6 h-6 text-[#EE4D2D]" /> Configurações
         </h1>
         <p className="text-sm text-[#6B7280] mt-1">
-          Centralize todas as credenciais e preferências de publicação. As alterações afetam o fluxo de geração e postagem.
+          Ajuste suas preferências de busca e publicação. Você pode conectar suas redes sociais aqui.
         </p>
       </div>
 
@@ -225,19 +217,14 @@ export default function ConfiguracoesPage() {
           { key: "redes", label: "Redes Sociais", icon: <Network className="w-4 h-4" /> },
           { key: "branding", label: "Branding", icon: <Palette className="w-4 h-4" /> },
           { key: "publicacao", label: "Publicação", icon: <CalendarClock className="w-4 h-4" /> },
-          { key: "integracoes", label: "Integrações", icon: <Cog className="w-4 h-4" /> },
-          { key: "seguranca", label: "Segurança", icon: <ShieldCheck className="w-4 h-4" /> },
         ]}
       />
 
-      {/* ==== ABA: PLATAFORMAS ==== */}
+      {/* ==== ABA: PLATAFORMAS (apenas o essencial) ==== */}
       {tab === "plataformas" && (
         <div className="grid lg:grid-cols-2 gap-6">
           {/* Shopee */}
-          <Section
-            title="Shopee"
-            subtitle="Parâmetros para busca de produtos e webhooks do n8n."
-          >
+          <Section title="Shopee" subtitle="Configurações básicas para busca de produtos.">
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Termos padrão de busca" hint="Separados por vírgula.">
                 <Input placeholder="ex.: smartwatch, fone bluetooth, ring light" />
@@ -245,17 +232,11 @@ export default function ConfiguracoesPage() {
               <Field label="País / Marketplace">
                 <Input placeholder="ex.: BR" />
               </Field>
-              <Field label="n8n — Webhook Buscar Produtos" hint="URL do workflow que retorna lista de produtos.">
-                <Input placeholder="https://n8n.seudominio.com/webhook/shopee-search" />
-              </Field>
-              <Field label="n8n — Webhook Arte Feed" hint="Gera imagem de post no padrão Shopee.">
-                <Input placeholder="https://n8n.seudominio.com/webhook/shopee-feed-art" />
-              </Field>
               <Field label="Página de afiliado / Link base">
                 <Input placeholder="https://shopee.com.br/..." />
               </Field>
               <Field label="Observações">
-                <Textarea rows={3} placeholder="Regras de comissão, categorias a priorizar etc." />
+                <Textarea rows={3} placeholder="Categorias a priorizar, preço mínimo, etc." />
               </Field>
             </div>
             <div className="mt-4">
@@ -263,52 +244,11 @@ export default function ConfiguracoesPage() {
             </div>
           </Section>
 
-          {/* Amazon */}
-          <Section
-            title="Amazon (em construção)"
-            subtitle="Já deixe as credenciais preparadas."
-          >
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Partner Tag">
-                <Input placeholder="seu-tag-20" />
-              </Field>
-              <Field label="Access Key / Secret Key">
-                <Input placeholder="AKIA..." />
-              </Field>
-              <Field label="n8n — Webhook Buscar Produtos">
-                <Input placeholder="https://n8n.seudominio.com/webhook/amazon-search" />
-              </Field>
-              <Field label="Região">
-                <Input placeholder="ex.: BR, US" />
-              </Field>
-            </div>
-            <div className="mt-4">
-              <SaveBar onSave={() => alert("Amazon: Salvo!")} />
-            </div>
-          </Section>
-
-          {/* Mercado Livre */}
-          <Section
-            title="Mercado Livre (em construção)"
-            subtitle="Configuração para as buscas e formatação."
-          >
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="App ID / Secret">
-                <Input placeholder="APP-ID / SECRET" />
-              </Field>
-              <Field label="n8n — Webhook Buscar Produtos">
-                <Input placeholder="https://n8n.seudominio.com/webhook/ml-search" />
-              </Field>
-              <Field label="Filtro de categorias">
-                <Input placeholder="ex.: MLB1055, MLB1648" />
-              </Field>
-              <Field label="Observações">
-                <Textarea rows={3} placeholder="Ex.: ignorar produtos sem variações, preço mínimo, etc." />
-              </Field>
-            </div>
-            <div className="mt-4">
-              <SaveBar onSave={() => alert("Mercado Livre: Salvo!")} />
-            </div>
+          {/* Espaço reservado para outras plataformas futuras */}
+          <Section title="Outras plataformas" subtitle="Em breve.">
+            <p className="text-sm text-[#6B7280]">
+              Suporte a Amazon e Mercado Livre será adicionado futuramente.
+            </p>
           </Section>
         </div>
       )}
@@ -316,49 +256,34 @@ export default function ConfiguracoesPage() {
       {/* ==== ABA: REDES SOCIAIS ==== */}
       {tab === "redes" && (
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* Instagram */}
-          <Section title="Instagram" subtitle="Conta, tokens e destinos.">
+          <Section title="Meta (Instagram / Facebook)" subtitle="Conecte sua conta para publicar.">
             <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Status da Conexão (Meta)">
+              <Field label="Status da Conexão">
                 <MetaConnect />
-              </Field>
-
-              <Field label="Instagram Business ID">
-                <Input placeholder="1784..." />
-              </Field>
-              <Field label="Access Token (Long-Lived)">
-                <Input placeholder="IGQ..." />
               </Field>
               <Field label="Destino padrão (Feed/Reels/Stories)">
                 <Input placeholder="Feed" />
               </Field>
-              <Field label="n8n — Webhook Postar">
-                <Input placeholder="https://n8n.seudominio.com/webhook/ig-post" />
+              <Field label="Instagram Business ID (opcional)">
+                <Input placeholder="1784..." />
+              </Field>
+              <Field label="Página do Facebook (opcional)">
+                <Input placeholder="ID ou @pagina" />
               </Field>
             </div>
             <div className="mt-4">
-              <SaveBar onSave={() => alert("Instagram: Salvo!")} />
+              <SaveBar onSave={() => alert("Redes Sociais: Salvo!")} />
             </div>
           </Section>
 
-          {/* Facebook */}
-          <Section title="Facebook" subtitle="Páginas, tokens e formatação.">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Page ID">
-                <Input placeholder="1234567890" />
-              </Field>
-              <Field label="Page Access Token">
-                <Input placeholder="EAAB..." />
-              </Field>
-              <Field label="Formato padrão (imagem/álbum)">
-                <Input placeholder="imagem" />
-              </Field>
-              <Field label="n8n — Webhook Postar">
-                <Input placeholder="https://n8n.seudominio.com/webhook/fb-post" />
+          <Section title="Legendas padrão" subtitle="Prefixos e padrões para suas publicações.">
+            <div className="grid gap-4">
+              <Field label="Legenda padrão (prefixo)">
+                <Textarea rows={4} placeholder="🔥 Oferta do dia..." />
               </Field>
             </div>
             <div className="mt-4">
-              <SaveBar onSave={() => alert("Facebook: Salvo!")} />
+              <SaveBar onSave={() => alert("Legendas: Salvo!")} />
             </div>
           </Section>
         </div>
@@ -367,7 +292,7 @@ export default function ConfiguracoesPage() {
       {/* ==== ABA: BRANDING ==== */}
       {tab === "branding" && (
         <div className="grid lg:grid-cols-2 gap-6">
-          <Section title="Identidade Visual" subtitle="Cores, logos e tipografia.">
+          <Section title="Identidade Visual" subtitle="Cores, logo e tipografia.">
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Cor primária">
                 <Input type="color" defaultValue="#EE4D2D" />
@@ -384,9 +309,6 @@ export default function ConfiguracoesPage() {
               <Field label="Marca d'água (texto)">
                 <Input placeholder="@minhaloja" />
               </Field>
-              <Field label="Observações">
-                <Textarea rows={3} placeholder="Como aplicar logo em posts, margem mínima, etc." />
-              </Field>
             </div>
             <div className="mt-4">
               <SaveBar onSave={() => alert("Branding: Salvo!")} onReset={() => alert("Branding: Restaurado")} />
@@ -398,7 +320,7 @@ export default function ConfiguracoesPage() {
       {/* ==== ABA: PUBLICAÇÃO ==== */}
       {tab === "publicacao" && (
         <div className="grid lg:grid-cols-2 gap-6">
-          <Section title="Agendamento" subtitle="Regras de horário e frequência.">
+          <Section title="Agendamento" subtitle="Frequência e janela de postagem.">
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Frequência diária">
                 <Input placeholder="ex.: 3 posts/dia" />
@@ -409,16 +331,13 @@ export default function ConfiguracoesPage() {
               <Field label="Distribuição por rede">
                 <Input placeholder="IG:2 | FB:1" />
               </Field>
-              <Field label="n8n — Webhook Agendar">
-                <Input placeholder="https://n8n.seudominio.com/webhook/schedule" />
-              </Field>
             </div>
             <div className="mt-4">
-              <SaveBar onSave={() => alert("Publicação/Agendamento: Salvo!")} />
+              <SaveBar onSave={() => alert("Agendamento: Salvo!")} />
             </div>
           </Section>
 
-          <Section title="Templates" subtitle="Presets para Feed, Reels e Tirinhas.">
+          <Section title="Templates de Post" subtitle="Presets simples.">
             <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Template (Feed)">
                 <Input placeholder="minimal, promo, dark..." />
@@ -429,96 +348,9 @@ export default function ConfiguracoesPage() {
               <Field label="Template (Tirinhas)">
                 <Input placeholder="3 painéis — cotidiano" />
               </Field>
-              <Field label="Legenda padrão (prefixo)">
-                <Textarea rows={3} placeholder="🔥 Oferta do dia..." />
-              </Field>
             </div>
             <div className="mt-4">
               <SaveBar onSave={() => alert("Templates: Salvo!")} />
-            </div>
-          </Section>
-        </div>
-      )}
-
-      {/* ==== ABA: INTEGRAÇÕES ==== */}
-      {tab === "integracoes" && (
-        <div className="grid lg:grid-cols-2 gap-6">
-          <Section title="Supabase" subtitle="Banco e storage.">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="URL do projeto">
-                <Input placeholder="https://xyzcompany.supabase.co" />
-              </Field>
-              <Field label="Anon Key">
-                <Input placeholder="eyJhbGciOi..." />
-              </Field>
-              <Field label="Tabela de Produtos">
-                <Input placeholder="products" />
-              </Field>
-              <Field label="Bucket de Imagens">
-                <Input placeholder="assets" />
-              </Field>
-            </div>
-            <div className="mt-4">
-              <SaveBar onSave={() => alert("Supabase: Salvo!")} />
-            </div>
-          </Section>
-
-          <Section title="n8n" subtitle="Base URL e webhooks padrão.">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Base URL">
-                <Input placeholder="https://n8n.seudominio.com" />
-              </Field>
-              <Field label="Auth (opcional)">
-                <Input placeholder="Bearer xxxxx" />
-              </Field>
-              <Field label="Timeout (ms)">
-                <Input placeholder="20000" />
-              </Field>
-              <Field label="Observações">
-                <Textarea rows={3} placeholder="Nome dos workflows, versionamento, etc." />
-              </Field>
-            </div>
-            <div className="mt-4">
-              <SaveBar onSave={() => alert("n8n: Salvo!")} />
-            </div>
-          </Section>
-        </div>
-      )}
-
-      {/* ==== ABA: SEGURANÇA ==== */}
-      {tab === "seguranca" && (
-        <div className="grid lg:grid-cols-2 gap-6">
-          <Section title="Permissões" subtitle="Controles básicos de acesso.">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Administrador (e-mail)">
-                <Input placeholder="admin@dominio.com" />
-              </Field>
-              <Field label="Editores (e-mails)">
-                <Textarea rows={3} placeholder="user1@...; user2@..." />
-              </Field>
-              <Field label="Somente publicação com aprovação">
-                <Input placeholder="true / false" />
-              </Field>
-              <Field label="Logs (retentativa / auditoria)">
-                <Input placeholder="7 dias" />
-              </Field>
-            </div>
-            <div className="mt-4">
-              <SaveBar onSave={() => alert("Segurança: Salvo!")} />
-            </div>
-          </Section>
-
-          <Section title="Chaves Sensíveis" subtitle="(use .env em produção)">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <Field label="Criptografia local (salt)">
-                <Input placeholder="••••••••" />
-              </Field>
-              <Field label="Webhook Secret">
-                <Input placeholder="••••••••" />
-              </Field>
-            </div>
-            <div className="mt-4">
-              <SaveBar onSave={() => alert("Chaves: Salvo!")} />
             </div>
           </Section>
         </div>
