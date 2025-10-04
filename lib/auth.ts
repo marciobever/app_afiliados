@@ -1,28 +1,51 @@
 // lib/auth.ts
-import { cookies } from "next/headers";
+import { cookies as nextCookies } from "next/headers";
+import type { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
+import { createHash } from "crypto";
 
 const APP_SESSION_SECRET = process.env.APP_SESSION_SECRET || "dev-secret";
 const COOKIE_NAME = "app_session";
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
 
 type SessionPayload = {
-  userId: string;
+  userId: string; // pode vir antigo: "user:email" | "email" | uuid
   orgId: string;
 };
 
+/* ---------- helpers ---------- */
+function isUuid(v: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
+/** Gera um UUID v4-like determinístico a partir de uma string */
+function uuidFromString(input: string): string {
+  const hex = createHash("sha256").update(input).digest("hex");
+  const s = hex.slice(0, 32).split("");
+  s[12] = "4"; // version
+  // variant
+  s[16] = ((parseInt(s[16], 16) & 0x3) | 0x8).toString(16);
+  return `${s.slice(0,8).join("")}-${s.slice(8,12).join("")}-${s.slice(12,16).join("")}-${s.slice(16,20).join("")}-${s.slice(20,32).join("")}`;
+}
+
+/** Normaliza qualquer userId não-UUID para um UUID estável */
+export function normalizeUserId(userId: string): string {
+  if (!userId) return uuidFromString("anon");
+  if (isUuid(userId)) return userId;
+  return uuidFromString(userId); // ex.: "user:email" -> UUID estável
+}
+
+/* ---------- jwt ---------- */
 export function createSessionToken(payload: SessionPayload) {
   return jwt.sign(payload, APP_SESSION_SECRET, { expiresIn: "30d" });
 }
-
 export function verifySessionToken(token: string): SessionPayload {
   return jwt.verify(token, APP_SESSION_SECRET) as SessionPayload;
 }
 
-/** cria o cookie de sessão na resposta */
-export function createSessionCookie(res: Response, payload: SessionPayload) {
+/* ---------- cookies ---------- */
+export function createSessionCookie(res: NextResponse, payload: SessionPayload) {
   const token = createSessionToken(payload);
-  // @ts-ignore - NextResponse tem .cookies.set
   res.cookies.set({
     name: COOKIE_NAME,
     value: token,
@@ -31,13 +54,10 @@ export function createSessionCookie(res: Response, payload: SessionPayload) {
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 30, // 30 dias
-    domain: COOKIE_DOMAIN,  // app.seureview.com.br
+    domain: COOKIE_DOMAIN,  // ex.: "app.seureview.com.br" (ou deixe vazio)
   });
 }
-
-/** apaga cookie de sessão */
-export function clearSessionCookie(res: Response) {
-  // @ts-ignore
+export function clearSessionCookie(res: NextResponse) {
   res.cookies.set({
     name: COOKIE_NAME,
     value: "",
@@ -50,12 +70,20 @@ export function clearSessionCookie(res: Response) {
   });
 }
 
-/** lê contexto do usuário a partir do cookie (em rotas server-side) */
-export function getUserContext() {
-  const c = cookies();
-  const token = c.get(COOKIE_NAME)?.value;
+/**
+ * Lê o contexto do usuário (compat com cookies antigos)
+ * - Se `req` for passado (Route Handlers), lê de req.cookies
+ * - Senão, lê de `next/headers`.cookies() (server components/actions)
+ * Retorna SEMPRE userId normalizado (UUID).
+ */
+export function getUserContext(req?: NextRequest) {
+  const token = req
+    ? req.cookies.get(COOKIE_NAME)?.value
+    : nextCookies().get(COOKIE_NAME)?.value;
+
   if (!token) throw new Error("no_session");
   const { userId, orgId } = verifySessionToken(token);
   if (!userId || !orgId) throw new Error("bad_session");
-  return { userId, orgId };
+  const userIdNorm = normalizeUserId(String(userId));
+  return { userIdNorm, orgId };
 }
