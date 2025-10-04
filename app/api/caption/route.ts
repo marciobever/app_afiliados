@@ -2,9 +2,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserContext } from "@/lib/auth";
 
-const N8N_URL =
-  process.env.N8N_BASE_URL?.replace(/\/+$/, "") + "/webhook/caption";
-
 function stripFences(s: string) {
   return s
     .trim()
@@ -16,32 +13,31 @@ function stripFences(s: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.N8N_BASE_URL) {
+    const base = process.env.N8N_BASE_URL?.replace(/\/+$/, "");
+    if (!base) {
       return NextResponse.json(
-        { error: "N8N_BASE_URL ausente no .env.local" },
+        { error: "N8N_BASE_URL ausente no .env" },
         { status: 500 }
       );
     }
+    const N8N_URL = `${base}/webhook/caption`;
 
     const body = await req.json().catch(() => ({} as any));
-    // pega user/org do cookie (ou headers x-user-id/x-org-id)
-    let userId = "", orgId = "";
+
+    // pega user/org do cookie; aceita tanto userId quanto userIdNorm
+    let userId = "";
+    let orgId = "";
     try {
-      const ctx = getUserContext();
-      userId = ctx.userId;
-      orgId = ctx.orgId;
+      const ctx = getUserContext() as any;
+      userId = ctx.userId ?? ctx.userIdNorm ?? "";
+      orgId = ctx.orgId ?? "";
     } catch {
-      // segue sem, se não tiver sessão (não quebra)
+      // segue sem sessão
     }
 
-    // monta payload para o n8n
-    const payload = {
-      ...body,
-      userId,
-      orgId,
-    };
+    const payload = { ...body, userId, orgId };
 
-    const n8nRes = await fetch(N8N_URL!, {
+    const n8nRes = await fetch(N8N_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -50,7 +46,6 @@ export async function POST(req: NextRequest) {
 
     const text = await n8nRes.text();
 
-    // tenta devolver JSON puro (n8n pode mandar cercas ```json)
     let data: any;
     try {
       data = JSON.parse(text);
@@ -62,7 +57,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // se o n8n retornou erro http, propague
     if (!n8nRes.ok) {
       return NextResponse.json(
         { error: "n8n_error", status: n8nRes.status, data },
