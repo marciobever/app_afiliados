@@ -1,27 +1,15 @@
 // lib/auth.ts
 import { cookies } from "next/headers";
-import jwt from "jsonwebtoken";
-
-const APP_SESSION_SECRET = process.env.APP_SESSION_SECRET || "dev-secret";
-const COOKIE_NAME = "app_session
-
-O deploy quebrou por um erro de **TypeScript**: o `getUserContext()` (ou sua tipagem) hoje está como `{ userIdNorm, orgId }`, mas no código você usa `ctx.userId`. Basta alinhar isso.
-
-## Opção A (recomendada): padronizar `getUserContext` para sempre retornar `userId`
-Edite **`lib/auth.ts`** e garanta que a função retorne **userId** (e, se quiser, mantenha `userIdNorm` como alias para compatibilidade):
-
-```ts
-// lib/auth.ts
-import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 
 const APP_SESSION_SECRET = process.env.APP_SESSION_SECRET || "dev-secret";
 const COOKIE_NAME = "app_session";
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
 
-type SessionPayload = {
-  userId: string; // sempre UUID
-  orgId: string;
+export type SessionPayload = {
+  userId: string; // sempre UUID agora
+  orgId: string;  // ex.: "default"
 };
 
 export function createSessionToken(payload: SessionPayload) {
@@ -29,12 +17,26 @@ export function createSessionToken(payload: SessionPayload) {
 }
 
 export function verifySessionToken(token: string): SessionPayload {
-  return jwt.verify(token, APP_SESSION_SECRET) as SessionPayload;
+  // compat: caso versões antigas tenham usado { userIdNorm, orgId }
+  const raw = jwt.verify(token, APP_SESSION_SECRET) as
+    | SessionPayload
+    | { userIdNorm?: string; orgId: string };
+
+  const userId =
+    (raw as any).userId ??
+    (raw as any).userIdNorm ??
+    "";
+
+  const orgId = (raw as any).orgId ?? "default";
+
+  if (!userId) throw new Error("bad_session_user");
+  return { userId, orgId };
 }
 
-export function createSessionCookie(res: Response, payload: SessionPayload) {
+/** Seta cookie de sessão na resposta */
+export function createSessionCookie(res: NextResponse, payload: SessionPayload) {
   const token = createSessionToken(payload);
-  // @ts-ignore
+  // @ts-ignore NextResponse tem .cookies.set no runtime
   res.cookies.set({
     name: COOKIE_NAME,
     value: token,
@@ -42,12 +44,13 @@ export function createSessionCookie(res: Response, payload: SessionPayload) {
     secure: true,
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-    domain: COOKIE_DOMAIN,
+    maxAge: 60 * 60 * 24 * 30, // 30 dias
+    domain: COOKIE_DOMAIN, // ex.: app.seureview.com.br (opcional)
   });
 }
 
-export function clearSessionCookie(res: Response) {
+/** Apaga cookie de sessão */
+export function clearSessionCookie(res: NextResponse) {
   // @ts-ignore
   res.cookies.set({
     name: COOKIE_NAME,
@@ -61,12 +64,10 @@ export function clearSessionCookie(res: Response) {
   });
 }
 
-// ✅ SEMPRE retorna { userId, orgId }. Mantém userIdNorm só por compat.
-export function getUserContext(): { userId: string; orgId: string; userIdNorm: string } {
+/** Lê user/org do cookie (server-side) */
+export function getUserContext(): SessionPayload {
   const c = cookies();
   const token = c.get(COOKIE_NAME)?.value;
   if (!token) throw new Error("no_session");
-  const { userId, orgId } = verifySessionToken(token);
-  if (!userId || !orgId) throw new Error("bad_session");
-  return { userId, orgId, userIdNorm: userId };
+  return verifySessionToken(token);
 }
