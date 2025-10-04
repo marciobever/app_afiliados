@@ -1,5 +1,6 @@
 import "./globals.css";
 import Link from "next/link";
+import BlockerCheck from "@/components/BlockerCheck";
 
 export const metadata = {
   title: "Afiliados",
@@ -10,6 +11,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR">
       <body className="bg-[#FFF4F0] text-[#111827] antialiased">
+        {/* Verificação de bloqueador de conteúdo */}
+        <BlockerCheck />
+
         {/* Topbar / Menu */}
         <header className="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-[#FFD9CF]">
           <nav className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
