@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getUserContext } from "@/lib/auth";
+import { isUuid, uuidFromString } from "@/lib/id";
 
-const META_APP_ID =
-  process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID || "";
+const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID || "";
 const META_APP_SECRET = process.env.META_APP_SECRET || "";
 const META_REDIRECT_URI = process.env.META_REDIRECT_URI || "";
 
@@ -30,34 +30,30 @@ export async function GET(req: NextRequest) {
     if (error) return html("Conexão cancelada: " + error);
     if (!code || !state) return html("Parâmetros ausentes.");
 
-    // recuperar usuário logado (cookie)
-    let userId: string;
-    let orgId: string;
-    try {
-      const ctx = getUserContext();
-      userId = ctx.userId;
-      orgId = ctx.orgId;
-    } catch {
-      return html("Sessão inválida. Faça login e tente conectar novamente.");
-    }
+    // sessão
+    const { userId: rawUserId, orgId } = (() => {
+      try { return getUserContext(); } catch { return { userId: "", orgId: "" } as any; }
+    })();
+    if (!rawUserId) return html("Sessão inválida. Faça login e tente de novo.");
+
+    // garante UUID no banco
+    const dbUserId = isUuid(rawUserId) ? rawUserId : uuidFromString(rawUserId);
 
     if (!META_APP_ID || !META_APP_SECRET || !META_REDIRECT_URI) {
-      return html("Meta App mal configurado no servidor (.env).");
+      return html("Meta App mal configurado (.env).");
     }
 
-    // validação básica do state: confere que o user do state é o mesmo da sessão
+    // checa state (se contiver user)
     try {
       const decoded = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
-      if (decoded?.u && decoded.u !== userId) {
+      if (decoded?.u && decoded.u !== rawUserId && decoded.u !== dbUserId) {
         return html("State inválido para este usuário.");
       }
-    } catch {
-      // se falhar parse, segue — mas recomendado manter essa checagem
-    }
+    } catch {}
 
-    // 1) Troca code -> short-lived token
+    // 1) troca code -> short-lived
     const tokenRes = await fetch(
-      `https://graph.facebook.com/v19.0/oauth/access_token?` +
+      "https://graph.facebook.com/v19.0/oauth/access_token?" +
         new URLSearchParams({
           client_id: META_APP_ID,
           client_secret: META_APP_SECRET,
@@ -67,29 +63,24 @@ export async function GET(req: NextRequest) {
       { method: "GET" }
     );
     const tokenJson = await tokenRes.json();
-    if (!tokenRes.ok) {
-      return html("Erro ao trocar code: " + JSON.stringify(tokenJson));
-    }
+    if (!tokenRes.ok) return html("Erro ao trocar code: " + JSON.stringify(tokenJson));
     const shortToken = tokenJson.access_token as string;
     const shortExpiresIn = tokenJson.expires_in as number | undefined;
 
-    // 2) Debug do token para pegar user_id e scopes
+    // 2) debug do token
     const appAccessToken = `${META_APP_ID}|${META_APP_SECRET}`;
     const debugRes = await fetch(
-      `https://graph.facebook.com/v19.0/debug_token?` +
-        new URLSearchParams({
-          input_token: shortToken,
-          access_token: appAccessToken,
-        }),
+      "https://graph.facebook.com/v19.0/debug_token?" +
+        new URLSearchParams({ input_token: shortToken, access_token: appAccessToken }),
       { method: "GET" }
     );
     const debugJson = (await debugRes.json()) as DebugTokenResp;
     const metaUserId = debugJson?.data?.user_id || null;
     const grantedScopes = debugJson?.data?.scopes || [];
 
-    // 3) Troca por long-lived token (recomendado)
+    // 3) long-lived (opcional mas recomendado)
     const longRes = await fetch(
-      `https://graph.facebook.com/v19.0/oauth/access_token?` +
+      "https://graph.facebook.com/v19.0/oauth/access_token?" +
         new URLSearchParams({
           grant_type: "fb_exchange_token",
           client_id: META_APP_ID,
@@ -99,7 +90,6 @@ export async function GET(req: NextRequest) {
       { method: "GET" }
     );
     const longJson = await longRes.json();
-    // se falhar, continua com short-lived
     const longToken =
       longRes.ok && longJson.access_token ? (longJson.access_token as string) : shortToken;
     const longExpiresIn =
@@ -107,11 +97,11 @@ export async function GET(req: NextRequest) {
         ? (longJson.expires_in as number)
         : shortExpiresIn ?? null;
 
-    // 4) Salva/atualiza no Supabase (tabela: social_integrations)
+    // 4) upsert no Supabase
     const sb = supabaseAdmin();
     const payload = {
-      user_id: userId,
-      org_id: orgId,
+      user_id: dbUserId,        // <- UUID garantido
+      org_id: orgId || "default",
       provider: "meta",
       meta_user_id: metaUserId,
       access_token: longToken,
@@ -120,47 +110,19 @@ export async function GET(req: NextRequest) {
       expires_in: longExpiresIn,
     };
 
-    // upsert por (user_id, provider) — precisa de UNIQUE(user_id, provider) na tabela
     const { error: upsertErr } = await sb
       .from("social_integrations")
       .upsert(payload, { onConflict: "user_id,provider" });
 
-    if (upsertErr) {
-      return html("Erro ao salvar no Supabase: " + upsertErr.message);
-    }
+    if (upsertErr) return html("Erro ao salvar no Supabase: " + upsertErr.message);
 
-    // 5) Resposta amigável
-    return html(
-      `✅ Conexão com Meta concluída!<br/>` +
-        `Você já pode fechar esta janela.`
-    );
+    return html(`✅ Conexão com Meta concluída!<br/>Você já pode fechar esta janela.`);
   } catch (e: any) {
     return html("Erro inesperado: " + (e?.message || String(e)));
   }
 }
 
 function html(body: string) {
-  const page = `<!doctype html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Meta Callback</title>
-<style>
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:24px;color:#111}
-  .card{max-width:560px;margin:0 auto;background:#fff;border:1px solid #eee;border-radius:12px;padding:20px}
-</style>
-</head>
-<body>
-  <div class="card">${body}</div>
-  <script>
-    // tenta avisar a janela que abriu o popup
-    if (window.opener) {
-      try { window.opener.postMessage({ meta_connected: true }, "*"); } catch {}
-    }
-  </script>
-</body>
-</html>`;
-  return new NextResponse(page, {
-    headers: { "content-type": "text/html; charset=utf-8" },
-    status: 200,
-  });
+  const page = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Meta Callback</title><style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;padding:24px;color:#111}.card{max-width:560px;margin:0 auto;background:#fff;border:1px solid #eee;border-radius:12px;padding:20px}</style></head><body><div class="card">${body}</div><script>if(window.opener){try{window.opener.postMessage({meta_connected:true},"*")}catch(e){}}</script></body></html>`;
+  return new NextResponse(page, { headers: { "content-type": "text/html; charset=utf-8" } });
 }
