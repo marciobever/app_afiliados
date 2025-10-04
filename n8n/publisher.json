@@ -1,0 +1,40 @@
+{
+  "name": "Publisher (starter)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "publisher"
+      },
+      "type": "n8n-nodes-base.webhook",
+      "name": "Webhook In",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "posts"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "name": "Fetch Post",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "url": "https://api.telegram.org/bot{{$env.TG_TOKEN}}/sendMessage"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "name": "Telegram (placeholder)",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "posts"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "name": "Mark Published",
+      "typeVersion": 1
+    }
+  ],
+  "connections": {}
+}

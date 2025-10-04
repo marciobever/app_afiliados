@@ -1,0 +1,31 @@
+{
+  "name": "Scheduler (starter)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": "*/10 * * * *"
+      },
+      "type": "n8n-nodes-base.cron",
+      "name": "Cron 10min",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "posts"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "name": "Find due posts",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "url": "https://SEU_N8N/webhook/publisher"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "name": "Call Publisher",
+      "typeVersion": 1
+    }
+  ],
+  "connections": {}
+}

@@ -1,0 +1,62 @@
+services:
+  afiliados-app:
+    build: .
+    container_name: afiliados-app
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # As variáveis abaixo vêm do seu .env.local (mapeado como volume)
+      # Mas você também pode duplicá-las aqui se preferir.
+      # - APP_SESSION_SECRET=super-long-random-secret-change-me-please-8b7b5d1f9c6a
+      # - COOKIE_DOMAIN=app.seureview.com.br
+      # - SUPABASE_URL=...
+      # - SUPABASE_SERVICE_ROLE_KEY=...
+      # - N8N_BASE_URL=...
+      # - N8N_CAPTION_URL=...
+      # - NEXT_PUBLIC_META_APP_ID=...
+      # - META_APP_SECRET=...
+      # - META_REDIRECT_URI=...
+
+    # Se quiser testar local sem Traefik, você pode expor 3000.
+    # Com Traefik não precisa, então deixo comentado:
+    # ports:
+    #   - "3000:3000"
+
+    # Importante: na mesma rede do coolify-proxy
+    networks:
+      - coolify
+
+    # Traefik labels
+    labels:
+      - "traefik.enable=true"
+
+      # HTTP → redireciona p/ HTTPS
+      - "traefik.http.routers.afiliados.rule=Host(`app.seureview.com.br`)"
+      - "traefik.http.routers.afiliados.entrypoints=web"
+      - "traefik.http.routers.afiliados.middlewares=afiliados-redirect"
+      - "traefik.http.routers.afiliados.service=afiliados"
+
+      - "traefik.http.middlewares.afiliados-redirect.redirectscheme.scheme=https"
+
+      # HTTPS
+      - "traefik.http.routers.afiliados-sec.rule=Host(`app.seureview.com.br`)"
+      - "traefik.http.routers.afiliados-sec.entrypoints=websecure"
+      - "traefik.http.routers.afiliados-sec.tls=true"
+      - "traefik.http.routers.afiliados-sec.tls.certresolver=myresolver"
+      - "traefik.http.routers.afiliados-sec.service=afiliados"
+
+      # Service → porta interna do Next
+      - "traefik.http.services.afiliados.loadbalancer.server.port=3000"
+
+      # Rede onde o Traefik vai procurar o container
+      - "traefik.docker.network=coolify"
+
+    # Se você preferir manter o .env.local do host sem fazer bake no build,
+    # mapeie como volume somente em runtime:
+    volumes:
+      - ./.env.local:/app/.env.local:ro
+
+networks:
+  coolify:
+    external: true

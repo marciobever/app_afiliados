@@ -1,0 +1,26 @@
+#!/bin/bash
+set -e
+
+echo "[hook] push recebido para $(date)"
+
+APP_DIR="/srv/Projetos/Afiliados"
+REPO_DIR="/srv/Projetos/Afiliados/app.git"
+
+echo "[1/4] Checkout para main..."
+git --work-tree="$APP_DIR" --git-dir="$REPO_DIR" checkout -f main
+
+cd "$APP_DIR"
+
+if [ -f .env.production ]; then
+  echo "[2/4] Carregando .env.production..."
+  export $(grep -v '^#' .env.production | xargs)
+fi
+
+echo "[3/4] Instalando dependências..."
+npm install --production --silent
+
+echo "[4/4] Buildando e subindo..."
+npm run build --silent
+pm2 restart afiliados || pm2 start npm --name afiliados -- start
+
+echo "[OK] Deploy finalizado!"

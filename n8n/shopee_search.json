@@ -1,0 +1,54 @@
+{
+  "name": "ShopeeSearch (starter)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "shopee-search",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "name": "Webhook In",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.function",
+      "name": "Map filters",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "url": "https://api.shopee.example/search",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "name": "Shopee API (placeholder)",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.function",
+      "name": "Normalize items",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "url": "https://SEU_SITE/api/n8n/products",
+        "options": {
+          "headerParametersUi": {
+            "parameter": [
+              {
+                "name": "x-api-key",
+                "value": "={{$env.N8N_SECRET}}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "name": "POST to Next",
+      "typeVersion": 1
+    }
+  ],
+  "connections": {}
+}
