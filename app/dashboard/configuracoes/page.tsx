@@ -1,19 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Settings, Store, Network } from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import { Settings, Store, Network } from "lucide-react";
 
-/**
- * ========================================================
- * CONFIGURAÇÕES — versão simplificada e funcional
- * - Shopee: dados básicos para integração
- * - Meta / Instagram: conectar conta e escolher perfil
- * ========================================================
- */
+/* ========================================================
+   CONFIGURAÇÕES SIMPLIFICADAS — versão limpa e funcional
+   ======================================================== */
 
-type TabKey = 'plataformas' | 'redes';
+type TabKey = "plataformas" | "redes";
 
-// ---------- Componentes visuais básicos ----------
+/* ---------- Componentes reutilizáveis ---------- */
 function Tabs({
   value,
   onChange,
@@ -21,25 +17,28 @@ function Tabs({
 }: {
   value: TabKey;
   onChange: (v: TabKey) => void;
-  tabs: { key: TabKey; label: string; icon: React.ReactNode }[];
+  tabs: { key: TabKey; label: string; icon?: React.ReactNode }[];
 }) {
   return (
-    <div className="grid grid-cols-2 rounded-xl overflow-hidden border border-[#FFD9CF] bg-white">
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          onClick={() => onChange(t.key)}
-          className={[
-            'px-4 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-2 border-r last:border-r-0 border-[#FFD9CF]',
-            value === t.key
-              ? 'bg-[#EE4D2D] text-white'
-              : 'bg-white text-[#111827] hover:bg-[#FFF4F0]',
-          ].join(' ')}
-        >
-          {t.icon}
-          {t.label}
-        </button>
-      ))}
+    <div className="w-full">
+      <div className="grid grid-cols-2 rounded-xl overflow-hidden border border-[#FFD9CF] bg-white">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => onChange(t.key)}
+            className={[
+              "px-4 py-2 text-sm font-medium border-r last:border-r-0 transition-colors flex items-center justify-center gap-2",
+              "border-[#FFD9CF]",
+              value === t.key
+                ? "bg-[#EE4D2D] text-white"
+                : "bg-white text-[#111827] hover:bg-[#FFF4F0]",
+            ].join(" ")}
+          >
+            {t.icon}
+            {t.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -57,29 +56,24 @@ function Section({
     <section className="rounded-xl border border-[#FFD9CF] bg-white">
       <div className="p-4 border-b border-[#FFD9CF]">
         <h3 className="font-semibold">{title}</h3>
-        {subtitle ? (
-          <p className="text-sm text-[#6B7280] mt-1">{subtitle}</p>
-        ) : null}
+        {subtitle ? <p className="text-sm text-[#6B7280] mt-1">{subtitle}</p> : null}
       </div>
-      <div className="p-4 space-y-4">{children}</div>
+      <div className="p-4">{children}</div>
     </section>
   );
 }
 
 function Field({
   label,
-  hint,
   children,
 }: {
   label: string;
-  hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
       <label className="text-sm font-medium text-[#374151]">{label}</label>
       {children}
-      {hint ? <p className="text-xs text-[#6B7280]">{hint}</p> : null}
     </div>
   );
 }
@@ -89,159 +83,130 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={[
-        'border border-[#FFD9CF] rounded-lg px-3 py-2 w-full',
-        'focus:outline-none focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D]',
-        props.className || '',
-      ].join(' ')}
+        "border border-[#FFD9CF] rounded-lg px-3 py-2 w-full text-sm",
+        "focus:outline-none focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D]",
+        props.className || "",
+      ].join(" ")}
     />
   );
 }
 
-function SaveBar({ onSave }: { onSave: () => void }) {
-  return (
-    <div className="flex justify-end">
-      <button
-        className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white"
-        onClick={onSave}
-      >
-        Salvar
-      </button>
-    </div>
-  );
-}
-
-// ---------- META CONNECT ----------
-function MetaConnect() {
-  const [status, setStatus] = useState<null | { connected: boolean; meta_user_id?: string; error?: string }>(null);
+/* ---------- Meta / Instagram Connection ---------- */
+function MetaConnect({ onSelect }: { onSelect: (id: string) => void }) {
+  const [status, setStatus] = useState<{ connected: boolean; meta_user_id?: string; error?: string } | null>(null);
+  const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  async function refresh() {
+  async function refreshStatus() {
+    const r = await fetch("/api/meta/status", { cache: "no-store" });
+    const j = await r.json();
+    setStatus(j);
+  }
+
+  async function connectMeta() {
+    setLoading(true);
     try {
-      const r = await fetch('/api/meta/status', { cache: 'no-store' });
-      const j = await r.json();
-      setStatus(j);
-    } catch {
-      setStatus({ connected: false, error: 'Falha ao consultar status' });
+      window.open("/api/meta/login", "meta_login", "width=680,height=760");
+      setTimeout(refreshStatus, 5000);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  async function fetchAccounts() {
+    const r = await fetch("/api/meta/instagram-accounts");
+    const j = await r.json();
+    if (j?.accounts?.length) setAccounts(j.accounts);
+    else alert("Nenhuma conta de Instagram Business encontrada.");
+  }
+
+  async function handleSelect(accountId: string) {
+    onSelect(accountId);
+    alert(`Conta Instagram selecionada: ${accountId}`);
   }
 
   useEffect(() => {
-    refresh();
-    function onMsg(ev: MessageEvent) {
-      if (ev?.data?.meta_connected) refresh();
-    }
-    window.addEventListener('message', onMsg);
-    return () => window.removeEventListener('message', onMsg);
+    refreshStatus();
+    const listener = (ev: MessageEvent) => {
+      if (ev.data?.meta_connected) refreshStatus();
+    };
+    window.addEventListener("message", listener);
+    return () => window.removeEventListener("message", listener);
   }, []);
 
-  async function openLogin() {
-    setLoading(true);
-    try {
-      window.open('/api/meta/login', 'meta_login', 'width=680,height=760');
-      setTimeout(refresh, 4000);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
-    <div className="flex items-center gap-3 flex-wrap">
-      <button
-        className="px-3 py-2 rounded-lg bg-[#1877F2] hover:bg-[#145DBF] text-white text-sm"
-        disabled={loading}
-        onClick={openLogin}
-      >
-        {loading
-          ? 'Abrindo Meta...'
-          : status?.connected
-          ? 'Reconectar Meta'
-          : 'Conectar Meta'}
-      </button>
-      {status?.connected ? (
-        <span className="text-sm text-green-700">
-          ✅ Conectado {status.meta_user_id ? `(#${status.meta_user_id})` : ''}
-        </span>
-      ) : (
-        <span className="text-sm text-gray-500">Não conectado</span>
-      )}
-      {status?.error ? (
-        <span className="text-sm text-red-600">{status.error}</span>
-      ) : null}
-    </div>
-  );
-}
-
-// ---------- Instagram Picker ----------
-function InstagramIdPicker() {
-  const [igAccounts, setIgAccounts] = useState<any[]>([]);
-  const [selectedId, setSelectedId] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  async function fetchInstagramAccounts() {
-    try {
-      setLoading(true);
-      const res = await fetch('/api/meta/instagram-accounts');
-      const data = await res.json();
-      if (data?.accounts) setIgAccounts(data.accounts);
-      else alert('Nenhuma conta encontrada.');
-    } catch {
-      alert('Erro ao buscar contas do Instagram.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      <button
-        onClick={fetchInstagramAccounts}
-        disabled={loading}
-        className="px-3 py-2 rounded-lg bg-[#E1306C] hover:bg-[#C72A5F] text-white text-sm"
-      >
-        {loading ? 'Buscando...' : 'Buscar contas do Instagram'}
-      </button>
-
-      {igAccounts.length > 0 && (
-        <select
-          className="border border-[#FFD9CF] rounded-lg px-3 py-2 w-full"
-          value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          className="px-3 py-2 rounded-lg bg-[#1877F2] hover:bg-[#145DBF] text-white text-sm"
+          disabled={loading}
+          onClick={connectMeta}
         >
-          <option value="">Selecione uma conta</option>
-          {igAccounts.map((a) => (
-            <option key={a.id} value={a.instagram_business_account?.id}>
-              {a.instagram_business_account?.username || a.name} —{' '}
-              {a.instagram_business_account?.id}
-            </option>
-          ))}
-        </select>
-      )}
+          {loading ? "Abrindo Meta…" : status?.connected ? "Reconectar Meta" : "Conectar Meta"}
+        </button>
 
-      {selectedId && (
-        <input
-          type="text"
-          readOnly
-          value={selectedId}
-          className="border border-[#FFD9CF] rounded-lg px-3 py-2 w-full bg-[#FFF4F0]"
-        />
+        {status?.connected && (
+          <button
+            onClick={fetchAccounts}
+            className="px-3 py-2 rounded-lg border border-[#FFD9CF] text-sm hover:bg-[#FFF4F0]"
+          >
+            Buscar Contas Instagram
+          </button>
+        )}
+      </div>
+
+      {accounts.length > 0 && (
+        <div className="border border-[#FFD9CF] rounded-lg p-3 bg-[#FFF9F7]">
+          <p className="text-sm mb-2 font-medium">Selecione uma conta:</p>
+          {accounts.map((acc) => (
+            <div
+              key={acc.id}
+              className="flex justify-between items-center p-2 border-b last:border-none border-[#FFD9CF]"
+            >
+              <div>
+                <div className="text-sm font-medium">{acc.name}</div>
+                {acc.instagram_business_account && (
+                  <div className="text-xs text-gray-500">
+                    IG: @{acc.instagram_business_account.username}
+                  </div>
+                )}
+              </div>
+              {acc.instagram_business_account?.id && (
+                <button
+                  className="text-xs px-2 py-1 bg-[#EE4D2D] text-white rounded hover:bg-[#D8431F]"
+                  onClick={() =>
+                    handleSelect(acc.instagram_business_account.id)
+                  }
+                >
+                  Usar
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
 }
 
-// ---------- PÁGINA PRINCIPAL ----------
+/* ---------- Página ---------- */
 export default function ConfiguracoesPage() {
-  const [tab, setTab] = useState<TabKey>('plataformas');
+  const [tab, setTab] = useState<TabKey>("plataformas");
+  const [instagramId, setInstagramId] = useState("");
+
+  function salvarRedes() {
+    alert(`Salvo com sucesso! Instagram ID: ${instagramId || "nenhum selecionado"}`);
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Cabeçalho */}
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Settings className="w-6 h-6 text-[#EE4D2D]" /> Configurações
         </h1>
         <p className="text-sm text-[#6B7280] mt-1">
-          Ajuste suas credenciais de integração e redes sociais.
+          Conecte suas plataformas e redes sociais para automatizar publicações.
         </p>
       </div>
 
@@ -250,44 +215,65 @@ export default function ConfiguracoesPage() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { key: 'plataformas', label: 'Plataformas', icon: <Store className="w-4 h-4" /> },
-          { key: 'redes', label: 'Redes Sociais', icon: <Network className="w-4 h-4" /> },
+          { key: "plataformas", label: "Plataformas", icon: <Store className="w-4 h-4" /> },
+          { key: "redes", label: "Redes Sociais", icon: <Network className="w-4 h-4" /> },
         ]}
       />
 
-      {/* ==== PLATAFORMAS ==== */}
-      {tab === 'plataformas' && (
+      {/* === PLATAFORMAS === */}
+      {tab === "plataformas" && (
         <Section
           title="Shopee"
-          subtitle="Configurações básicas para integração e busca de produtos."
+          subtitle="Defina como buscar e promover produtos afiliados."
         >
           <div className="grid sm:grid-cols-2 gap-4">
-            <Field label="Token da API Shopee">
-              <Input placeholder="Cole aqui o token de afiliado da Shopee" />
+            <Field label="Termos padrão de busca">
+              <Input placeholder="ex.: smartwatch, fone bluetooth, ring light" />
             </Field>
-            <Field label="Link de afiliado (base)">
+            <Field label="País / Marketplace">
+              <Input placeholder="ex.: BR" />
+            </Field>
+            <Field label="Página de afiliado / Link base">
               <Input placeholder="https://shopee.com.br/..." />
             </Field>
           </div>
-          <SaveBar onSave={() => alert('Configurações salvas!')} />
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => alert("Shopee: configurações salvas!")}
+              className="px-4 py-2 rounded-lg bg-[#EE4D2D] text-white hover:bg-[#D8431F]"
+            >
+              Salvar
+            </button>
+          </div>
         </Section>
       )}
 
-      {/* ==== REDES SOCIAIS ==== */}
-      {tab === 'redes' && (
+      {/* === REDES === */}
+      {tab === "redes" && (
         <Section
-          title="Meta (Facebook / Instagram)"
-          subtitle="Conecte sua conta Meta e vincule um perfil do Instagram Business."
+          title="Meta / Instagram"
+          subtitle="Conecte sua conta e escolha o perfil do Instagram Business."
         >
-          <Field label="Conexão Meta">
-            <MetaConnect />
-          </Field>
+          <MetaConnect onSelect={setInstagramId} />
 
-          <Field label="Instagram Business ID">
-            <InstagramIdPicker />
-          </Field>
+          <div className="mt-4">
+            <Field label="Instagram Business ID Selecionado">
+              <Input
+                value={instagramId}
+                onChange={(e) => setInstagramId(e.target.value)}
+                placeholder="1784..."
+              />
+            </Field>
+          </div>
 
-          <SaveBar onSave={() => alert('Redes sociais salvas!')} />
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={salvarRedes}
+              className="px-4 py-2 rounded-lg bg-[#EE4D2D] text-white hover:bg-[#D8431F]"
+            >
+              Salvar
+            </button>
+          </div>
         </Section>
       )}
     </div>
