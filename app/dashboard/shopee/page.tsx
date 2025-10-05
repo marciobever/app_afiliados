@@ -3,9 +3,8 @@
 import React from 'react';
 import { ShoppingCart } from 'lucide-react';
 import Products from './Products';
-import Designer from './Designer';
 
-type Tab = 'produtos' | 'designer' | 'reels' | 'tirinhas';
+type Tab = 'produtos';
 
 function Tabs({
   value,
@@ -16,13 +15,10 @@ function Tabs({
 }) {
   const tabs: Array<{ key: Tab; label: string }> = [
     { key: 'produtos', label: 'Produtos' },
-    { key: 'designer', label: 'Designer (Feed)' },
-    { key: 'reels', label: 'Reels' },
-    { key: 'tirinhas', label: 'Tirinhas' },
   ];
   return (
     <div className="w-full">
-      <div className="grid grid-cols-4 w-full md:w-[720px] rounded-xl overflow-hidden border border-[#FFD9CF] bg-white">
+      <div className="grid grid-cols-1 w-full md:w-[180px] rounded-xl overflow-hidden border border-[#FFD9CF] bg-white">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -58,7 +54,7 @@ export default function ShopeeDashboardPage() {
           <ShoppingCart className="w-6 h-6 text-[#EE4D2D]" /> Shopee — Painel de Conteúdo
         </h1>
         <p className="text-sm text-[#6B7280] mt-1">
-          Curadoria de produtos → criação de assets para Facebook/Instagram (feed), Reels e Tirinhas.
+          Selecione produtos e gere legendas automáticas com CTA para Facebook ou Instagram.
         </p>
       </div>
 
@@ -72,12 +68,6 @@ export default function ShopeeDashboardPage() {
           setProductsMap={setProductsMap}
         />
       )}
-
-      {tab === 'designer' && (
-        <Designer selected={selected} productsMap={productsMap} />
-      )}
-
-      {/* Reels / Tirinhas podem ser adicionados depois no mesmo padrão */}
     </main>
   );
 }
