@@ -23,10 +23,6 @@ type Product = {
   url: string;
 };
 
-const N8N_SOCIAL_URL =
-  process.env.NEXT_PUBLIC_N8N_SOCIAL_URL ||
-  'https://n8n.seureview.com.br/webhook/social';
-
 function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
@@ -84,7 +80,7 @@ function buildFacebookCaption(v: any) {
     (v.cta || '').trim(),
     Array.isArray(v.hashtags) ? v.hashtags.join(' ').trim() : '',
   ].filter(Boolean);
-  return parts.join('\n\n');
+  return parts.join('\n\n`);
 }
 
 /** Deriva ID Shopee a partir da URL (shopId_itemId) */
@@ -170,7 +166,7 @@ async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payl
   return { variants, keyword };
 }
 
-/** Publica nas redes chamando diretamente o webhook do n8n */
+/** Publica nas redes via nossa API Next (proxy para n8n) */
 async function publishToSocial({
   platform,
   product,
@@ -184,42 +180,24 @@ async function publishToSocial({
   caption: string;
   scheduleTime?: string;
 }) {
-  // payload completo para o n8n
+  const safeProduct = ensureSafeProduct(product.url, product);
+
   const payload = {
-    platform,
-    platform_subid: platform, // subid = plataforma (conforme workflow)
+    platform,                 // 'facebook' | 'instagram'
+    product: safeProduct,
+    trackedUrl,               // o backend espera "trackedUrl"
     caption,
-    link: trackedUrl,         // shortlink s.shopee
-    product: {
-      id: product.id || deriveShopeeIdFromUrl(product.url),
-      title: product.title,
-      price: product.price,
-      rating: product.rating,
-      image: product.image,
-      url: product.url,
-    },
     scheduleTime: scheduleTime || null,
-    context: {
-      // extras úteis pro fluxo/log
-      source: 'composer',
-      ts: new Date().toISOString(),
-      // mantém também em plano superior se te ajudar no n8n
-      productId: product.id || deriveShopeeIdFromUrl(product.url),
-      productUrl: product.url,
-    },
   };
 
-  // chamada direta ao webhook do n8n (CORS precisa estar liberado no n8n)
-  const res = await fetch(N8N_SOCIAL_URL, {
+  const res = await fetch('/api/integrations/n8n/publish', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    // se usares api-key no n8n, comente/ajuste a linha abaixo
-    // headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_N8N_KEY ?? '' },
     body: JSON.stringify(payload),
   });
 
   const data = await res.json().catch(() => ({} as any));
-  if (!res.ok || data?.error) {
+  if (!res.ok || (data && data.error)) {
     throw new Error(data?.message || data?.error || 'Falha ao publicar nas redes sociais');
   }
 }
