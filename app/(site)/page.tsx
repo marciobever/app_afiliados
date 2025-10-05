@@ -34,8 +34,9 @@ export default function LandingPage() {
 
           {/* Ações */}
           <div className="flex items-center gap-2">
+            {/* 👉 Botão de login redireciona para /login */}
             <Link
-              href="/dashboard"
+              href="/login"
               className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
             >
               Entrar
@@ -63,7 +64,7 @@ export default function LandingPage() {
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link
-                  href="/dashboard/shopee"
+                  href="/login"
                   className="rounded-lg bg-[#EE4D2D] text-white px-4 py-2.5 text-sm md:text-base hover:bg-[#D8431F]"
                 >
                   Começar agora
