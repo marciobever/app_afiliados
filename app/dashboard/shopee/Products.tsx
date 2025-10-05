@@ -43,12 +43,30 @@ function TerminalCard({
       </div>
 
       <div className="mt-4 space-y-3">
-        <div className="aspect-[4/3] bg-[#0f0f0f] rounded-lg overflow-hidden border border-[#1f1f1f]">
-          <img src={product.image} alt={product.title} className="w-full h-full object-cover" loading="lazy" />
+        {/* 👉 imagem abre o Composer */}
+        <div
+          className="aspect-[4/3] bg-[#0f0f0f] rounded-lg overflow-hidden border border-[#1f1f1f] cursor-pointer"
+          onClick={onCompose}
+          role="button"
+          aria-label="Abrir composer"
+        >
+          <img
+            src={product.image}
+            alt={product.title}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
         </div>
 
         <div className="space-y-1">
-          <p className="text-[#FF6A3C]">$ {product.title}</p>
+          {/* 👉 título também abre o Composer */}
+          <p
+            className="text-[#FF6A3C] cursor-pointer line-clamp-2"
+            onClick={onCompose}
+            title="Abrir composer"
+          >
+            $ {product.title}
+          </p>
           <p className="text-gray-300">
             <span className="text-amber-300">★</span> {product.rating.toFixed(1)} — R${' '}
             {Number(product.price ?? 0).toFixed(2)}
@@ -57,12 +75,7 @@ function TerminalCard({
         </div>
 
         <div className="flex gap-2 pt-1">
-          <button
-            className="px-3 py-1.5 rounded text-sm border border-[#343434] bg-[#1a1a1a] hover:bg-[#232323]"
-            onClick={onCompose}
-          >
-            Compor
-          </button>
+          {/* ❌ removido o botão “Compor”  */}
           <button
             className={[
               'px-3 py-1.5 rounded text-sm border transition-colors',
@@ -87,9 +100,9 @@ export default function Products({
   setProductsMap,
 }: {
   selected: string[];
-  setSelected: React.Dispatch<React.SetStateAction<string[]>>; // CORRIGIDO
+  setSelected: React.Dispatch<React.SetStateAction<string[]>>;
   productsMap: Record<string, ApiItem>;
-  setProductsMap: React.Dispatch<React.SetStateAction<Record<string, ApiItem>>>; // mantém updater
+  setProductsMap: React.Dispatch<React.SetStateAction<Record<string, ApiItem>>>;
 }) {
   const [query, setQuery] = React.useState('');
   const [onlyPromo, setOnlyPromo] = React.useState(false);
@@ -141,7 +154,8 @@ export default function Products({
 
   const filtered = React.useMemo(() => {
     let out = items.slice();
-    if (onlyPromo) out = out.filter((p: any) => Array.isArray((p as any).tags) && (p as any).tags.includes('promo'));
+    if (onlyPromo)
+      out = out.filter((p: any) => Array.isArray((p as any).tags) && (p as any).tags.includes('promo'));
     if (minRating > 0) out = out.filter((p) => Number(p.rating || 0) >= minRating);
     const q = query.trim().toLowerCase();
     if (q) out = out.filter((p) => p.title.toLowerCase().includes(q));
@@ -199,14 +213,12 @@ export default function Products({
         </div>
       </div>
 
-      {/* Estado de erro */}
+      {/* Erro */}
       {err && (
-        <div className="p-3 rounded-lg border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318] text-sm">
-          {err}
-        </div>
+        <div className="p-3 rounded-lg border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318] text-sm">{err}</div>
       )}
 
-      {/* Mensagem inicial sem busca */}
+      {/* Mensagem inicial */}
       {!loading && !err && items.length === 0 && (
         <div className="p-4 rounded-lg border border-[#FFD9CF] bg-white text-sm text-[#6B7280]">
           Faça uma busca para listar produtos.
@@ -230,12 +242,8 @@ export default function Products({
         ))}
       </div>
 
-      {/* Drawer de composição */}
-      <ComposerDrawer
-        open={composerOpen}
-        onClose={() => setComposerOpen(false)}
-        product={composerProduct}
-      />
+      {/* Drawer */}
+      <ComposerDrawer open={composerOpen} onClose={() => setComposerOpen(false)} product={composerProduct} />
     </section>
   );
 }
