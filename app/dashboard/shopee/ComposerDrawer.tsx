@@ -80,7 +80,7 @@ function buildFacebookCaption(v: any) {
     (v.cta || '').trim(),
     Array.isArray(v.hashtags) ? v.hashtags.join(' ').trim() : '',
   ].filter(Boolean);
-return parts.join('\n\n');
+  return parts.join('\n\n');
 }
 
 /** Deriva ID Shopee a partir da URL (shopId_itemId) */
@@ -183,7 +183,7 @@ async function publishToSocial({
   const safeProduct = ensureSafeProduct(product.url, product);
 
   const payload = {
-    platform,                 // 'facebook' | 'instagram'
+    platform,                 // 'facebook' | 'instagram' | 'x' (o backend deve validar)
     product: safeProduct,
     trackedUrl,               // o backend espera "trackedUrl"
     caption,
@@ -258,14 +258,20 @@ export default function ComposerDrawer({
           style: 'Minimal',
         });
         const v = Array.isArray(variants) && variants.length ? variants[0] : null;
-        setCaption(v ? buildInstagramCaption(v, keyword) : `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl || safeProduct.url}`);
+        setCaption(
+          v ? buildInstagramCaption(v, keyword)
+            : `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl || safeProduct.url}`,
+        );
       } else {
         const { variants } = await fetchCaption('facebook_caption', {
           products: [safeProduct],
           style: 'Minimal',
         });
         const v = Array.isArray(variants) && variants.length ? variants[0] : null;
-        setCaption(v ? buildFacebookCaption(v) : `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl || safeProduct.url}`);
+        setCaption(
+          v ? buildFacebookCaption(v)
+            : `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl || safeProduct.url}`,
+        );
       }
     } catch (e: any) {
       const safeProduct = ensureSafeProduct(product.url, product);
@@ -307,7 +313,7 @@ export default function ComposerDrawer({
             <Globe2 className="w-4 h-4 text-[#EE4D2D]" />
             Composer
           </div>
-          <button className="p-2 rounded hover:bg-[#FFF4F0]" aria-label="Fechar" onClick={onClose}>
+        <button className="p-2 rounded hover:bg-[#FFF4F0]" aria-label="Fechar" onClick={onClose}>
             <XIcon className="w-5 h-5" />
           </button>
         </div>
