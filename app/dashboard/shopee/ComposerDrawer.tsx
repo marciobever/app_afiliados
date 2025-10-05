@@ -1,9 +1,26 @@
 'use client';
 
 import React from 'react';
-import { X as XIcon, Copy, Check, Link2, Loader2, CalendarClock } from 'lucide-react';
+import {
+  X as XIcon,
+  Copy,
+  Check,
+  Link2,
+  Loader2,
+  CalendarClock,
+  Globe2,
+} from 'lucide-react';
 
 type PlatformKey = 'facebook' | 'instagram' | 'x';
+
+type Product = {
+  id: string;
+  title: string;
+  price: number;
+  rating: number;
+  image: string;
+  url: string;
+};
 
 function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
@@ -26,7 +43,7 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
   );
 }
 
-/** Gera legenda com CTA via Gemini (insta/facebook diferentes) */
+/** 🔹 Gera legenda automática via Gemini */
 async function generateCaption(title: string, platform: PlatformKey) {
   const r = await fetch('/api/ai/gemini-caption', {
     method: 'POST',
@@ -38,24 +55,40 @@ async function generateCaption(title: string, platform: PlatformKey) {
   return j.caption as string;
 }
 
-/** Lista perfis de SubID */
-async function fetchProfiles(): Promise<string[]> {
-  const r = await fetch('/api/subids/profiles', { method: 'GET', cache: 'no-store' });
-  const j = await r.json();
-  if (!r.ok || j.error) throw new Error(j.error || 'Falha ao carregar perfis');
-  return Array.isArray(j.profiles) ? j.profiles : [];
-}
-
-/** Gera link rastreado com SubIDs para um perfil e plataforma */
-async function getTrackedUrl(baseUrl: string, platform: PlatformKey, sub_profile: string, product?: any) {
+/** 🔹 Gera link rastreável (via webhook n8n de SubIDs) */
+async function getTrackedUrl(baseUrl: string, platform: PlatformKey, profile?: string, product?: Product) {
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ base_url: baseUrl, platform, sub_profile, product }),
+    body: JSON.stringify({ base_url: baseUrl, platform, sub_profile: profile, product }),
   });
   const j = await r.json();
   if (!r.ok || j.error) throw new Error(j.error || 'Falha ao montar SubIDs');
   return { url: j.url as string, subids: (j.subids_used as string[]) || [] };
+}
+
+/** 🔹 Publica nas redes (via webhook n8n /webhook/social) */
+async function publishToSocial({
+  platform,
+  product,
+  trackedUrl,
+  caption,
+  scheduleTime,
+}: {
+  platform: PlatformKey;
+  product: Product;
+  trackedUrl: string;
+  caption: string;
+  scheduleTime?: string;
+}) {
+  // Proxy interno -> backend chama https://n8n.seureview.com.br/webhook/social
+  const r = await fetch('/api/integrations/n8n/social', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform, product, trackedUrl, caption, scheduleTime: scheduleTime || null }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j?.error) throw new Error(j?.error || 'Falha ao publicar nas redes sociais');
 }
 
 export default function ComposerDrawer({
@@ -65,112 +98,71 @@ export default function ComposerDrawer({
 }: {
   open: boolean;
   onClose: () => void;
-  product: null | {
-    id: string;
-    title: string;
-    price: number;
-    rating: number;
-    image: string;
-    url: string;
-  };
+  product: Product | null;
 }) {
   const [platform, setPlatform] = React.useState<PlatformKey>('facebook');
-  const [profiles, setProfiles] = React.useState<string[]>([]);
-  const [activeProfile, setActiveProfile] = React.useState<string>('');
+  const [profile, setProfile] = React.useState<string>('padrão');
   const [trackedUrl, setTrackedUrl] = React.useState('');
-  const [subidsUsed, setSubidsUsed] = React.useState<string[]>([]);
   const [caption, setCaption] = React.useState('');
+  const [subidsUsed, setSubidsUsed] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
-  const [linkLoading, setLinkLoading] = React.useState(false);
 
-  // 1) abre → carrega perfis + gera caption
+  // Carrega link (SubIDs) + legenda sempre que mudar plataforma/perfil/produto
   React.useEffect(() => {
     async function init() {
       if (!product) return;
       setLoading(true);
       try {
-        // Perfis
-        const ps = await fetchProfiles();
-        setProfiles(ps);
-        const initial = ps[0] || 'default';
-        setActiveProfile(initial);
-
-        // Caption
-        const generated = await generateCaption(product.title, platform);
-        setCaption(generated.replace('{link}', '')); // sem link ainda
+        const [{ url, subids }, generated] = await Promise.all([
+          getTrackedUrl(product.url, platform, profile, product),
+          generateCaption(product.title, platform),
+        ]);
+        setTrackedUrl(url);
+        setSubidsUsed(subids);
+        setCaption(generated.replace('{link}', url));
       } catch {
-        setCaption(`${product.title}\n\nConfira aqui 👉 {link}`);
+        setCaption(`${product.title}\n\nConfira aqui 👉 ${product.url}`);
       } finally {
         setLoading(false);
       }
     }
     if (open && product) init();
-  }, [open, product, platform]);
-
-  // 2) ao escolher um perfil, gera o link para (platform, perfil)
-  async function buildLinkForProfile(profile: string) {
-    if (!product) return;
-    setLinkLoading(true);
-    try {
-      const { url, subids } = await getTrackedUrl(product.url, platform, profile, product);
-      setTrackedUrl(url);
-      setSubidsUsed(subids);
-      // injeta o link na legenda, se houver placeholder
-      setCaption((old) => (old.includes('{link}') ? old.replace(/\{link\}/g, url) : `${old}\n\n${url}`));
-    } finally {
-      setLinkLoading(false);
-    }
-  }
-
-  // Auto-gerar link quando o primeiro perfil chega
-  React.useEffect(() => {
-    if (!open || !product) return;
-    if (activeProfile) buildLinkForProfile(activeProfile);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProfile]);
+  }, [open, product, platform, profile]);
 
   async function publishNow(scheduleTime?: string) {
     if (!product) return;
     const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url);
-
-    const r = await fetch('/api/integrations/n8n/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        platform,
-        product,
-        trackedUrl,
-        subidsUsed,
-        caption: finalCaption,
-        scheduleTime: scheduleTime || null,
-      }),
-    });
-    const j = await r.json();
-    if (!r.ok) {
-      alert(`Erro ao publicar: ${j?.error || 'desconhecido'}`);
-      return;
+    setLoading(true);
+    try {
+      await publishToSocial({ platform, product, trackedUrl, caption: finalCaption, scheduleTime });
+      alert(scheduleTime ? 'Publicação agendada com sucesso!' : 'Publicado com sucesso!');
+      onClose();
+    } catch (err: any) {
+      alert('Erro ao publicar: ' + (err?.message || String(err)));
+    } finally {
+      setLoading(false);
     }
-
-    alert(scheduleTime ? 'Publicação agendada!' : 'Publicado com sucesso!');
-    onClose();
   }
 
   if (!open || !product) return null;
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* backdrop */}
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      {/* panel */}
-      <aside className="absolute right-0 top-0 h-full w-full sm:w-[560px] bg-white border-l shadow-xl flex flex-col">
+      <aside className="absolute right-0 top-0 h-full w-full sm:w-[520px] bg-white border-l shadow-xl flex flex-col">
+        {/* Cabeçalho */}
         <div className="p-4 border-b flex items-center justify-between">
-          <div className="font-semibold">Composer</div>
+          <div className="font-semibold flex items-center gap-2">
+            <Globe2 className="w-4 h-4 text-[#EE4D2D]" />
+            Composer
+          </div>
           <button className="p-2 rounded hover:bg-[#FFF4F0]" aria-label="Fechar" onClick={onClose}>
             <XIcon className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-4 space-y-5 overflow-auto">
+        {/* Conteúdo */}
+        <div className="p-4 space-y-4 overflow-auto">
           {/* Produto */}
           <div className="flex gap-3">
             <img src={product.image} alt="" className="w-20 h-20 rounded object-cover" />
@@ -200,52 +192,43 @@ export default function ComposerDrawer({
                 </button>
               ))}
             </div>
-            <p className="text-xs text-[#6B7280] mt-1">A legenda é gerada conforme a plataforma.</p>
           </div>
 
-          {/* Perfis de SubID */}
+          {/* Perfil de SubIDs */}
           <div>
             <label className="text-sm font-medium text-[#374151]">Perfil de SubIDs</label>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {profiles.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setActiveProfile(p)}
-                  className={cx(
-                    'px-3 py-1.5 rounded-full border text-sm',
-                    activeProfile === p
-                      ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]'
-                      : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
-                  )}
-                >
-                  {p}
-                </button>
-              ))}
-              {!profiles.length && <span className="text-sm text-[#6B7280]">Nenhum perfil disponível.</span>}
+            <select
+              value={profile}
+              onChange={(e) => setProfile(e.target.value)}
+              className="mt-1 border border-[#FFD9CF] rounded-lg px-3 py-2 w-full text-sm"
+            >
+              <option value="padrão">Padrão</option>
+              <option value="facebook_ads">Facebook Ads</option>
+              <option value="instagram_organico">Instagram Orgânico</option>
+              <option value="influencer">Influencer</option>
+            </select>
+          </div>
+
+          {/* Link rastreável (montado automaticamente) */}
+          <div>
+            <label className="text-sm font-medium text-[#374151]">Link com SubIDs</label>
+            <div className="mt-1 flex gap-2">
+              <input
+                className="w-full border border-[#FFD9CF] rounded px-3 py-2 text-sm"
+                value={trackedUrl}
+                readOnly
+              />
+              <CopyButton text={trackedUrl} label="Copiar" />
             </div>
             {!!subidsUsed.length && (
-              <div className="mt-2 text-xs text-[#6B7280] flex items-center gap-1">
+              <div className="mt-1 text-xs text-[#6B7280] flex items-center gap-1">
                 <Link2 className="w-3.5 h-3.5" />
                 Aplicados: {subidsUsed.join(' · ')}
               </div>
             )}
           </div>
 
-          {/* Link com SubIDs */}
-          <div>
-            <label className="text-sm font-medium text-[#374151]">Link rastreado</label>
-            <div className="mt-1 flex gap-2">
-              <input className="w-full border border-[#FFD9CF] rounded px-3 py-2 text-sm" value={trackedUrl} readOnly />
-              <CopyButton text={trackedUrl} label="Copiar" />
-            </div>
-            {linkLoading && (
-              <div className="text-xs text-[#6B7280] mt-1 inline-flex items-center gap-1">
-                <Loader2 className="w-3 h-3 animate-spin" /> Gerando link…
-              </div>
-            )}
-          </div>
-
-          {/* Caption */}
+          {/* Legenda */}
           <div>
             <label className="text-sm font-medium text-[#374151]">Legenda</label>
             <textarea
@@ -254,29 +237,30 @@ export default function ComposerDrawer({
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
             />
-            <div className="mt-2 flex gap-2">
-              <CopyButton text={caption} label="Copiar legenda" />
-            </div>
           </div>
         </div>
 
+        {/* Rodapé */}
         <div className="p-4 border-t flex justify-end gap-2">
-          <button className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]" onClick={onClose}>
+          <button
+            className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]"
+            onClick={onClose}
+          >
             Cancelar
           </button>
           <button
-            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2"
-            disabled={loading || linkLoading}
+            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
+            disabled={loading}
             onClick={() => publishNow()}
           >
             {loading && <Loader2 className="animate-spin w-4 h-4" />}
             Publicar
           </button>
           <button
-            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2"
-            disabled={loading || linkLoading}
+            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
+            disabled={loading}
             onClick={() => {
-              const when = prompt('Agendar para (ex: 2025-10-05T18:00:00-03:00):');
+              const when = prompt('Agendar para (ex: 2025-10-05T18:00:00Z):');
               if (when) publishNow(when);
             }}
           >
