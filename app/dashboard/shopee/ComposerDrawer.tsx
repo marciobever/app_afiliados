@@ -80,7 +80,7 @@ function buildFacebookCaption(v: any) {
     (v.cta || '').trim(),
     Array.isArray(v.hashtags) ? v.hashtags.join(' ').trim() : '',
   ].filter(Boolean);
-  return parts.join('\n\n`);
+return parts.join('\n\n');
 }
 
 /** Deriva ID Shopee a partir da URL (shopId_itemId) */
