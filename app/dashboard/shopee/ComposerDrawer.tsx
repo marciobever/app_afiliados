@@ -36,6 +36,7 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
         setOk(true);
         setTimeout(() => setOk(false), 1200);
       }}
+      disabled={!text}
     >
       {ok ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
       {ok ? 'Copiado' : label}
@@ -50,21 +51,34 @@ async function generateCaption(title: string, platform: PlatformKey) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, platform }),
   });
-  const j = await r.json();
+  const j = await r.json().catch(() => ({}));
   if (!r.ok || j.error) throw new Error(j.error || 'Falha ao gerar legenda');
-  return j.caption as string;
+  return (j.caption as string) || '';
 }
 
 /** 🔹 Gera link rastreável (via webhook n8n de SubIDs) */
-async function getTrackedUrl(baseUrl: string, platform: PlatformKey, profile?: string, product?: Product) {
+async function getTrackedUrl(
+  baseUrl: string,
+  platform: PlatformKey,
+  profile: string | undefined,
+  product: Product | undefined
+) {
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ base_url: baseUrl, platform, sub_profile: profile, product }),
+    body: JSON.stringify({
+      base_url: baseUrl,
+      platform,
+      sub_profile: profile ?? '',
+      product, // << importante pro Node 6 montar subids (itemId etc.)
+    }),
   });
-  const j = await r.json();
+  const j = await r.json().catch(() => ({}));
   if (!r.ok || j.error) throw new Error(j.error || 'Falha ao montar SubIDs');
-  return { url: j.url as string, subids: (j.subids_used as string[]) || [] };
+  return {
+    url: (j.url as string) || '',
+    subids: (j.subids_used as string[]) || [],
+  };
 }
 
 /** 🔹 Publica nas redes (via webhook n8n /webhook/social) */
@@ -81,11 +95,16 @@ async function publishToSocial({
   caption: string;
   scheduleTime?: string;
 }) {
-  // Proxy interno -> backend chama https://n8n.seureview.com.br/webhook/social
   const r = await fetch('/api/integrations/n8n/social', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ platform, product, trackedUrl, caption, scheduleTime: scheduleTime || null }),
+    body: JSON.stringify({
+      platform,
+      product,
+      trackedUrl,
+      caption,
+      scheduleTime: scheduleTime || null,
+    }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j?.error) throw new Error(j?.error || 'Falha ao publicar nas redes sociais');
@@ -106,45 +125,67 @@ export default function ComposerDrawer({
   const [caption, setCaption] = React.useState('');
   const [subidsUsed, setSubidsUsed] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
+  const [errMsg, setErrMsg] = React.useState<string | null>(null);
+
+  // Reseta campos quando muda plataforma/perfil (evita link/legenda “velhos”)
+  React.useEffect(() => {
+    if (!open) return;
+    setTrackedUrl('');
+    setSubidsUsed([]);
+    setCaption('');
+    setErrMsg(null);
+  }, [open, platform, profile]);
 
   // Carrega link (SubIDs) + legenda sempre que mudar plataforma/perfil/produto
   React.useEffect(() => {
     async function init() {
-      if (!product) return;
+      if (!product || !open) return;
       setLoading(true);
+      setErrMsg(null);
       try {
         const [{ url, subids }, generated] = await Promise.all([
           getTrackedUrl(product.url, platform, profile, product),
           generateCaption(product.title, platform),
         ]);
+        const finalCaption = (generated || '').replace('{link}', url || product.url);
         setTrackedUrl(url);
         setSubidsUsed(subids);
-        setCaption(generated.replace('{link}', url));
-      } catch {
+        setCaption(finalCaption || `${product.title}\n\nConfira aqui 👉 ${url || product.url}`);
+      } catch (e: any) {
+        setTrackedUrl('');
+        setSubidsUsed([]);
         setCaption(`${product.title}\n\nConfira aqui 👉 ${product.url}`);
+        setErrMsg(e?.message || 'Falha ao preparar link/legenda');
       } finally {
         setLoading(false);
       }
     }
-    if (open && product) init();
+    init();
   }, [open, product, platform, profile]);
 
   async function publishNow(scheduleTime?: string) {
     if (!product) return;
-    const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url);
+    const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url).trim();
+    if (!trackedUrl) {
+      alert('Link rastreável ainda não foi gerado. Aguarde um instante e tente novamente.');
+      return;
+    }
     setLoading(true);
+    setErrMsg(null);
     try {
       await publishToSocial({ platform, product, trackedUrl, caption: finalCaption, scheduleTime });
       alert(scheduleTime ? 'Publicação agendada com sucesso!' : 'Publicado com sucesso!');
       onClose();
     } catch (err: any) {
-      alert('Erro ao publicar: ' + (err?.message || String(err)));
+      setErrMsg(err?.message || 'Erro ao publicar nas redes sociais');
     } finally {
       setLoading(false);
     }
   }
 
   if (!open || !product) return null;
+
+  const publishDisabled = loading || !trackedUrl;
 
   return (
     <div className="fixed inset-0 z-50">
@@ -168,10 +209,17 @@ export default function ComposerDrawer({
             <img src={product.image} alt="" className="w-20 h-20 rounded object-cover" />
             <div className="min-w-0">
               <div className="font-medium line-clamp-2">{product.title}</div>
-              <div className="text-sm text-gray-600">R$ {product.price.toFixed(2)}</div>
+              <div className="text-sm text-gray-600">R$ {Number(product.price).toFixed(2)}</div>
               <div className="text-xs text-gray-500">ID: {product.id}</div>
             </div>
           </div>
+
+          {/* Erro (se houver) */}
+          {errMsg && (
+            <div className="p-2 text-sm rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
+              {errMsg}
+            </div>
+          )}
 
           {/* Plataforma */}
           <div>
@@ -217,6 +265,7 @@ export default function ComposerDrawer({
                 className="w-full border border-[#FFD9CF] rounded px-3 py-2 text-sm"
                 value={trackedUrl}
                 readOnly
+                placeholder={loading ? 'Gerando…' : '—'}
               />
               <CopyButton text={trackedUrl} label="Copiar" />
             </div>
@@ -236,6 +285,7 @@ export default function ComposerDrawer({
               rows={8}
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
+              placeholder={loading ? 'Gerando legenda…' : 'Escreva/edite sua legenda'}
             />
           </div>
         </div>
@@ -250,7 +300,7 @@ export default function ComposerDrawer({
           </button>
           <button
             className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
-            disabled={loading}
+            disabled={publishDisabled}
             onClick={() => publishNow()}
           >
             {loading && <Loader2 className="animate-spin w-4 h-4" />}
@@ -258,7 +308,7 @@ export default function ComposerDrawer({
           </button>
           <button
             className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
-            disabled={loading}
+            disabled={publishDisabled}
             onClick={() => {
               const when = prompt('Agendar para (ex: 2025-10-05T18:00:00Z):');
               if (when) publishNow(when);
