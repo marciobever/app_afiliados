@@ -26,7 +26,7 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
   );
 }
 
-/** Gera legenda com CTA contextual por plataforma (usa Gemini no backend) */
+/** 🔹 Gera legenda com CTA via Gemini (insta/facebook diferentes) */
 async function generateCaption(title: string, platform: PlatformKey) {
   const r = await fetch('/api/ai/gemini-caption', {
     method: 'POST',
@@ -38,7 +38,7 @@ async function generateCaption(title: string, platform: PlatformKey) {
   return j.caption as string;
 }
 
-/** Gera link rastreável com SubIDs */
+/** 🔹 Cria link com SubIDs automáticos */
 async function getTrackedUrl(baseUrl: string, platform: PlatformKey) {
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
@@ -192,10 +192,7 @@ export default function ComposerDrawer({
               onChange={(e) => setCaption(e.target.value)}
             />
             <div className="mt-2 flex gap-2">
-              <CopyButton
-                text={caption}
-                label="Copiar legenda"
-              />
+              <CopyButton text={caption} label="Copiar legenda" />
             </div>
           </div>
         </div>
