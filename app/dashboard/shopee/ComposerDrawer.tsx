@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { X as XIcon, Copy, Check, Link2, Loader2, CalendarClock } from 'lucide-react';
+import { X as XIcon, Copy, Check, Link2, Loader2, CalendarClock, Sparkles } from 'lucide-react';
 
 type PlatformKey = 'facebook' | 'instagram' | 'x';
 
@@ -26,7 +26,7 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
   );
 }
 
-/** gera legenda (insta/fb diferentes) */
+/** Gera legenda com CTA via Gemini */
 async function generateCaption(title: string, platform: PlatformKey) {
   const r = await fetch('/api/ai/gemini-caption', {
     method: 'POST',
@@ -38,7 +38,7 @@ async function generateCaption(title: string, platform: PlatformKey) {
   return j.caption as string;
 }
 
-/** monta link com subids */
+/** Cria link com SubIDs automáticos */
 async function getTrackedUrl(baseUrl: string, platform: PlatformKey) {
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
@@ -71,7 +71,9 @@ export default function ComposerDrawer({
   const [caption, setCaption] = React.useState('');
   const [subidsUsed, setSubidsUsed] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
+  const [captionLoading, setCaptionLoading] = React.useState(false);
 
+  // carrega link + primeira legenda automaticamente
   React.useEffect(() => {
     async function init() {
       if (!product) return;
@@ -85,13 +87,27 @@ export default function ComposerDrawer({
         setSubidsUsed(subids);
         setCaption(generated.replace('{link}', url));
       } catch {
-        setCaption(`${product.title}\n\nConfira aqui 👉 ${product.url}`);
+        setCaption(`${product?.title ?? ''}\n\nConfira aqui 👉 ${product?.url ?? ''}`);
       } finally {
         setLoading(false);
       }
     }
     if (open && product) init();
   }, [open, product, platform]);
+
+  async function regenerateCaption() {
+    if (!product) return;
+    setCaptionLoading(true);
+    try {
+      const generated = await generateCaption(product.title, platform);
+      // se já temos trackedUrl, substitui {link}; senão mantém placeholder
+      setCaption(trackedUrl ? generated.replace('{link}', trackedUrl) : generated);
+    } catch (e) {
+      // mantém a atual em caso de erro silenciosamente
+    } finally {
+      setCaptionLoading(false);
+    }
+  }
 
   async function publishNow(scheduleTime?: string) {
     if (!product) return;
@@ -159,7 +175,7 @@ export default function ComposerDrawer({
             </div>
           </div>
 
-          {/* Link */}
+          {/* Link com SubIDs */}
           <div>
             <label className="text-sm font-medium text-[#374151]">Link com SubIDs</label>
             <div className="mt-1 flex gap-2">
@@ -176,12 +192,25 @@ export default function ComposerDrawer({
 
           {/* Caption */}
           <div>
-            <label className="text-sm font-medium text-[#374151]">Legenda gerada</label>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-[#374151]">Legenda gerada</label>
+              <button
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0] text-sm"
+                onClick={regenerateCaption}
+                disabled={captionLoading}
+                title="Gerar novamente com Gemini"
+              >
+                {captionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                {captionLoading ? 'Gerando…' : 'Gerar legenda'}
+              </button>
+            </div>
+
             <textarea
               className="mt-1 w-full border border-[#FFD9CF] rounded-lg p-2 text-sm"
               rows={8}
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
+              placeholder="A legenda será gerada aqui. Use {link} para inserir a URL rastreada."
             />
             <div className="mt-2 flex gap-2">
               <CopyButton text={caption} label="Copiar legenda" />
