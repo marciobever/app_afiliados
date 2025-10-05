@@ -5,14 +5,16 @@ import { ShoppingCart } from 'lucide-react';
 import Products from './Products';
 import Designer from './Designer';
 
+type Tab = 'produtos' | 'designer' | 'reels' | 'tirinhas';
+
 function Tabs({
   value,
   onChange,
 }: {
-  value: 'produtos' | 'designer' | 'reels' | 'tirinhas';
-  onChange: (v: 'produtos' | 'designer' | 'reels' | 'tirinhas') => void;
+  value: Tab;
+  onChange: (v: Tab) => void;
 }) {
-  const tabs: Array<{ key: typeof value; label: string }> = [
+  const tabs: Array<{ key: Tab; label: string }> = [
     { key: 'produtos', label: 'Produtos' },
     { key: 'designer', label: 'Designer (Feed)' },
     { key: 'reels', label: 'Reels' },
@@ -42,9 +44,9 @@ function Tabs({
 }
 
 export default function ShopeeDashboardPage() {
-  const [tab, setTab] = React.useState<'produtos' | 'designer' | 'reels' | 'tirinhas'>('produtos');
+  const [tab, setTab] = React.useState<Tab>('produtos');
 
-  // seleção e mapa de produtos ficam no nível da página para serem compartilhados
+  // estados compartilhados entre abas
   const [selected, setSelected] = React.useState<string[]>([]);
   const [productsMap, setProductsMap] = React.useState<Record<string, any>>({});
 
@@ -75,7 +77,7 @@ export default function ShopeeDashboardPage() {
         <Designer selected={selected} productsMap={productsMap} />
       )}
 
-      {/* Reels / Tirinhas podem vir depois no mesmo padrão de modularização */}
+      {/* Reels / Tirinhas podem ser adicionados depois no mesmo padrão */}
     </main>
   );
 }
