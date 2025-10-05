@@ -183,7 +183,7 @@ async function publishToSocial({
   const safeProduct = ensureSafeProduct(product.url, product);
 
   const payload = {
-    platform,                 // 'facebook' | 'instagram' | 'x' (o backend deve validar)
+    platform,                 // 'facebook' | 'instagram' | 'x'
     product: safeProduct,
     trackedUrl,               // o backend espera "trackedUrl"
     caption,
@@ -196,10 +196,24 @@ async function publishToSocial({
     body: JSON.stringify(payload),
   });
 
-  const data = await res.json().catch(() => ({} as any));
-  if (!res.ok || (data && data.error)) {
-    throw new Error(data?.message || data?.error || 'Falha ao publicar nas redes sociais');
+  // Lê como texto primeiro para evitar AggregateError quando não for JSON
+  const raw = await res.text();
+  let data: any = null;
+  try {
+    data = raw ? JSON.parse(raw) : null;
+  } catch {
+    // mantém raw para mensagem de erro
   }
+
+  if (!res.ok || (data && data.error)) {
+    const msg =
+      (data && (data.message || data.error)) ||
+      raw ||
+      `Falha (${res.status}) ao publicar nas redes sociais`;
+    throw new Error(msg);
+  }
+
+  return data || { ok: true };
 }
 
 /* -------------------- componente -------------------- */
@@ -291,10 +305,12 @@ export default function ComposerDrawer({
     const safeProduct = ensureSafeProduct(product.url, product);
     const finalCaption = (caption || `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl}`).trim();
     try {
-      await publishToSocial({ platform, product: safeProduct, trackedUrl, caption: finalCaption, scheduleTime });
+      const resp = await publishToSocial({ platform, product: safeProduct, trackedUrl, caption: finalCaption, scheduleTime });
+      console.log('publish response:', resp);
       alert(scheduleTime ? 'Publicação agendada com sucesso!' : 'Publicado com sucesso!');
       onClose();
     } catch (err: any) {
+      console.error('publish error:', err);
       setErrMsg(err?.message || 'Erro ao publicar nas redes sociais');
     }
   }
@@ -313,7 +329,7 @@ export default function ComposerDrawer({
             <Globe2 className="w-4 h-4 text-[#EE4D2D]" />
             Composer
           </div>
-        <button className="p-2 rounded hover:bg-[#FFF4F0]" aria-label="Fechar" onClick={onClose}>
+          <button className="p-2 rounded hover:bg-[#FFF4F0]" aria-label="Fechar" onClick={onClose}>
             <XIcon className="w-5 h-5" />
           </button>
         </div>
