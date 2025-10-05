@@ -87,9 +87,9 @@ export default function Products({
   setProductsMap,
 }: {
   selected: string[];
-  setSelected: (v: string[]) => void;
+  setSelected: React.Dispatch<React.SetStateAction<string[]>>; // CORRIGIDO
   productsMap: Record<string, ApiItem>;
-  setProductsMap: React.Dispatch<React.SetStateAction<Record<string, ApiItem>>>;
+  setProductsMap: React.Dispatch<React.SetStateAction<Record<string, ApiItem>>>; // mantém updater
 }) {
   const [query, setQuery] = React.useState('');
   const [onlyPromo, setOnlyPromo] = React.useState(false);
