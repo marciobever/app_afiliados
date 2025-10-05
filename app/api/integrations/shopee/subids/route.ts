@@ -9,7 +9,55 @@ const N8N_SUBIDS_URL =
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+  try {import { NextRequest, NextResponse } from 'next/server'
+
+export const dynamic = 'force-dynamic'
+
+const N8N_SUBIDS_URL =
+  process.env.N8N_SUBIDS_URL || 'https://n8n.seureview.com.br/webhook/shopee_subids'
+
+export async function POST(req: NextRequest) {
   try {
+    const body = await req.json().catch(() => ({} as any))
+
+    const payload = {
+      base_url: body.base_url,       // URL base do produto (offer_link ou product_link)
+      platform: body.platform,       // 'facebook' | 'instagram' | 'x'
+      sub_profile: body.sub_profile, // perfil escolhido no Composer
+      product: body.product || null, // opcional: { id, title, ... }
+    }
+
+    const r = await fetch(N8N_SUBIDS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    })
+
+    const text = await r.text()
+    let data: any
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = { raw: text }
+    }
+
+    if (!r.ok) {
+      return NextResponse.json(
+        { error: `n8n responded ${r.status}`, data },
+        { status: 502 }
+      )
+    }
+
+    // Esperado: { url: 'https://...', subids_used: ['facebook','...'] }
+    return NextResponse.json(data)
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: 'subids_proxy_failed', message: e?.message },
+      { status: 500 }
+    )
+  }
+}
     const body = await req.json().catch(() => ({} as any));
 
     // contexto opcional do usuário/organização
