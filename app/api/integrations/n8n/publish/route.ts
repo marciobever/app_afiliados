@@ -1,21 +1,29 @@
 // app/api/integrations/n8n/publish/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { Pool } from 'pg'
-
-// Se você usa outra lib de auth, troque aqui:
 import { getUserContext } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
-// Use o webhook "social" (o que você mostrou). Pode sobrescrever via ENV.
+// Aceita os dois nomes de ENV, priorizando N8N_PUBLISH_URL
 const N8N_PUBLISH_URL =
-  process.env.N8N_PUBLISH_URL || 'https://n8n.seureview.com.br/webhook/social'
+  process.env.N8N_PUBLISH_URL ||
+  process.env.N8N_PUBLISH_WEBHOOK_URL || // fallback
+  'https://n8n.seureview.com.br/webhook/social'
 
-// --- DB pool (Postgres) ---
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  // opcional: ssl: { rejectUnauthorized: false },
-})
+// -------------- Postgres (pool singleton) --------------
+function getPool() {
+  const key = '__pg_pool__'
+  const g = globalThis as any
+  if (!g[key]) {
+    g[key] = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      // ssl: { rejectUnauthorized: false }, // habilite se precisar
+    })
+  }
+  return g[key] as Pool
+}
+const pool = getPool()
 
 // Busca a integração META (Facebook/Instagram) mais recente por user_id
 async function getMetaIntegrationByUser(userId: string) {
@@ -30,7 +38,8 @@ async function getMetaIntegrationByUser(userId: string) {
       page_name,
       granted_scopes,
       obtained_at,
-      expires_in
+      expires_in,
+      updated_at
     FROM social_integrations
     WHERE user_id = $1
       AND provider = 'meta'
@@ -41,9 +50,8 @@ async function getMetaIntegrationByUser(userId: string) {
   return rows[0] || null
 }
 
-// Tipos locais
+// -------------------- Tipos --------------------
 type PlatformKey = 'facebook' | 'instagram' | 'x'
-
 type Product = {
   id: string
   title: string
@@ -53,7 +61,7 @@ type Product = {
   url: string
 }
 
-// Util: normaliza product (garante id e campos básicos)
+// -------------------- Helpers --------------------
 function deriveShopeeIdFromUrl(url?: string): string {
   if (!url) return ''
   try {
@@ -93,6 +101,7 @@ function ensureSafeProduct(baseUrl: string, p?: Product | null): Product {
   }
 }
 
+// -------------------- Handler --------------------
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({} as any))
@@ -105,10 +114,9 @@ export async function POST(req: NextRequest) {
     const scheduleTime: string | null =
       body.scheduleTime != null ? String(body.scheduleTime) : null
 
-    // product pode vir incompleto; normalizamos
     const product = ensureSafeProduct(body?.product?.url || '', body.product)
 
-    // validações mínimas
+    // Validações mínimas
     if (!platform || !['facebook', 'instagram'].includes(platform)) {
       return NextResponse.json(
         { error: 'invalid_platform', message: 'Use "facebook" ou "instagram".' },
@@ -116,28 +124,21 @@ export async function POST(req: NextRequest) {
       )
     }
     if (!caption) {
-      return NextResponse.json(
-        { error: 'missing_caption' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'missing_caption' }, { status: 400 })
     }
     if (!trackedUrl) {
-      return NextResponse.json(
-        { error: 'missing_tracked_url' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'missing_tracked_url' }, { status: 400 })
     }
 
-    // Contexto do usuário logado (para buscar credenciais)
+    // Usuário logado para buscar credenciais
     let userId = ''
     let orgId = ''
     try {
       const ctx = getUserContext() as any
       userId = ctx?.userId ?? ctx?.userIdNorm ?? ''
       orgId = ctx?.orgId ?? ''
-    } catch {
-      // segue sem sessão – mas pra publicar a gente precisa das credenciais
-    }
+    } catch {}
+
     if (!userId) {
       return NextResponse.json(
         { error: 'unauthenticated', message: 'Sessão não encontrada.' },
@@ -145,11 +146,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Busca integração META do usuário
+    // Busca integração META
     const integ = await getMetaIntegrationByUser(userId)
     if (!integ) {
       return NextResponse.json(
-        { error: 'meta_integration_not_found', message: 'Vincule sua conta do Facebook/Instagram nas Configurações.' },
+        {
+          error: 'meta_integration_not_found',
+          message: 'Vincule sua conta do Facebook/Instagram nas Configurações.',
+        },
         { status: 400 }
       )
     }
@@ -158,27 +162,24 @@ export async function POST(req: NextRequest) {
     const ig_business_id: string | null = integ.instagram_business_id || null
     const fb_page_id: string | null = integ.page_id || null
 
-    // Provider de destino que o n8n espera:
-    // - "instagram": publish via IG Graph (requires ig_business_id)
-    // - "meta": publish via FB Page (requires fb_page_id)
+    // Provider esperado pelo n8n:
+    // - "instagram" => IG Graph (precisa de ig_business_id + imagem)
+    // - "meta"      => Página FB (precisa de fb_page_id)
     const provider = platform === 'instagram' ? 'instagram' : 'meta'
 
-    // Escolhe imagem (se não houver, o n8n pode tentar publicar só texto+link no FB)
-    const image_url: string | undefined =
-      product.image || undefined
+    const image_url: string | undefined = product.image || undefined
 
-    // payload final para o webhook do n8n
     const payloadForN8n: Record<string, any> = {
-      provider,            // "instagram" ou "meta"
+      provider,
       caption,
-      image_url,           // opcional para FB; obrigatório para IG se publicar imagem
+      image_url, // IG exige imagem; FB pode publicar só texto+link
       access_token,
       ig_business_id: provider === 'instagram' ? ig_business_id : null,
       fb_page_id: provider === 'meta' ? fb_page_id : null,
 
       // contexto útil
-      platform,            // 'facebook' | 'instagram'
-      link: trackedUrl,    // mantemos como "link" também, caso o fluxo use
+      platform, // 'facebook' | 'instagram'
+      link: trackedUrl,
       product,
       scheduleTime: scheduleTime || null,
       context: {
@@ -191,15 +192,14 @@ export async function POST(req: NextRequest) {
       },
     }
 
-    // validações finais por destino (evita 400 no n8n sem motivo claro)
+    // Checagens finais para evitar 400 no n8n
     const missing: string[] = []
     if (!access_token) missing.push('access_token')
     if (provider === 'instagram') {
       if (!ig_business_id) missing.push('ig_business_id')
-      if (!image_url) missing.push('image_url') // IG exige mídia
+      if (!image_url) missing.push('image_url')
     } else {
       if (!fb_page_id) missing.push('fb_page_id')
-      // FB pode publicar só texto+link; image_url é opcional
     }
     if (missing.length) {
       return NextResponse.json(
@@ -208,10 +208,13 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Envia para o n8n
+    // Envia ao n8n (inclui x-api-key se existir)
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (process.env.N8N_SECRET) headers['x-api-key'] = process.env.N8N_SECRET
+
     const r = await fetch(N8N_PUBLISH_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payloadForN8n),
       cache: 'no-store',
     })
