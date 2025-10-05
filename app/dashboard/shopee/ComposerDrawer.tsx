@@ -10,6 +10,8 @@ import {
   CalendarClock,
   Globe2,
   Wand2,
+  Link as LinkIcon,
+  MessageSquareText,
 } from 'lucide-react';
 
 type PlatformKey = 'facebook' | 'instagram' | 'x';
@@ -17,14 +19,19 @@ type PlatformKey = 'facebook' | 'instagram' | 'x';
 type Product = {
   id: string;
   title: string;
-  price: number;
-  rating: number;
+  price: number | null;
+  rating: number | null;
   image: string;
   url: string;
 };
 
 function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
+}
+
+function platformLabel(p: PlatformKey) {
+  if (p === 'x') return 'X (Twitter)';
+  return p[0].toUpperCase() + p.slice(1);
 }
 
 function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }) {
@@ -35,9 +42,10 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
       onClick={async () => {
         await navigator.clipboard.writeText(text || '');
         setOk(true);
-        setTimeout(() => setOk(false), 1000);
+        setTimeout(() => setOk(false), 900);
       }}
       disabled={!text}
+      title={label}
     >
       {ok ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
       {ok ? 'Copiado' : label}
@@ -105,20 +113,20 @@ function ensureSafeProduct(baseUrl: string, p?: Product | null): Product {
     deriveShopeeIdFromUrl(baseUrl);
 
   return {
-    id,
+    id: id || '_',
     title: p?.title ?? '',
     price:
-      typeof p?.price === 'number'
+      p?.price == null
+        ? null
+        : typeof p.price === 'number'
         ? p.price
-        : p?.price != null
-        ? Number(p.price as any)
-        : (null as any),
+        : Number(p.price as any),
     rating:
-      typeof p?.rating === 'number'
+      p?.rating == null
+        ? null
+        : typeof p.rating === 'number'
         ? p.rating
-        : p?.rating != null
-        ? Number(p.rating as any)
-        : (null as any),
+        : Number(p.rating as any),
     image: p?.image ?? '',
     url: p?.url ?? baseUrl,
   };
@@ -166,7 +174,7 @@ async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payl
   return { variants, keyword };
 }
 
-/** Publica nas redes (n8n /webhook/social via /api/integrations/n8n/social) */
+/** Publica nas redes: envia TUDO que o webhook precisa + legenda */
 async function publishToSocial({
   platform,
   product,
@@ -180,11 +188,37 @@ async function publishToSocial({
   caption: string;
   scheduleTime?: string;
 }) {
+  const safeProduct = ensureSafeProduct(product.url, product);
+
+  // payload que vai para o n8n webhook social (via nosso proxy server-side)
+  const payload = {
+    platform,                   // 'facebook' | 'instagram' | 'x'
+    caption,                    // legenda final
+    shortlink: trackedUrl,      // link curto com subid embutido
+    base_url: safeProduct.url,  // url canônica do produto
+    product: safeProduct,       // produto normalizado
+    scheduleTime: scheduleTime || null,
+    source: 'dashboard_composer',
+    meta: {
+      generatedAt: new Date().toISOString(),
+      platform_subid: platform, // subid == plataforma (conforme workflow)
+    },
+  };
+
+  // 1) via API interna (recomendado p/ evitar CORS no client)
   const r = await fetch('/api/integrations/n8n/social', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ platform, product, trackedUrl, caption, scheduleTime: scheduleTime || null }),
+    body: JSON.stringify(payload),
   });
+
+  // // 2) se quiser bater direto no webhook do n8n, use isso (atenção ao CORS no client!):
+  // const r = await fetch('https://n8n.seureview.com.br/webhook/social', {
+  //   method: 'POST',
+  //   headers: { 'Content-Type': 'application/json', 'x-api-key': '<SEU_TOKEN_AQUI_OPCIONAL>' },
+  //   body: JSON.stringify(payload),
+  // });
+
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j?.error) throw new Error(j?.error || 'Falha ao publicar nas redes sociais');
 }
@@ -269,9 +303,9 @@ export default function ComposerDrawer({
       alert('Gerando link… aguarde e tente novamente.');
       return;
     }
-    const finalCaption = (caption || `${product.title}\n\nConfira aqui 👉 ${trackedUrl}`).trim();
+    const safeProduct = ensureSafeProduct(product.url, product);
+    const finalCaption = (caption || `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl}`).trim();
     try {
-      const safeProduct = ensureSafeProduct(product.url, product);
       await publishToSocial({ platform, product: safeProduct, trackedUrl, caption: finalCaption, scheduleTime });
       alert(scheduleTime ? 'Publicação agendada com sucesso!' : 'Publicado com sucesso!');
       onClose();
@@ -306,8 +340,12 @@ export default function ComposerDrawer({
             <img src={product.image} alt="" className="w-20 h-20 rounded object-cover" />
             <div className="min-w-0">
               <div className="font-medium line-clamp-2">{product.title}</div>
-              <div className="text-sm text-gray-600">R$ {Number(product.price).toFixed(2)}</div>
-              <div className="text-xs text-gray-500">ID: {product.id || deriveShopeeIdFromUrl(product.url)}</div>
+              <div className="text-sm text-gray-600">
+                {product.price != null ? `R$ ${Number(product.price).toFixed(2)}` : 'Preço: —'}
+              </div>
+              <div className="text-xs text-gray-500">
+                ID: {product.id || deriveShopeeIdFromUrl(product.url)}
+              </div>
             </div>
           </div>
 
@@ -332,7 +370,7 @@ export default function ComposerDrawer({
                   )}
                   disabled={busyLink || busyCaption}
                 >
-                  {p === 'x' ? 'X (Twitter)' : p[0].toUpperCase() + p.slice(1)}
+                  {platformLabel(p)}
                 </button>
               ))}
             </div>
@@ -376,10 +414,17 @@ export default function ComposerDrawer({
             }
           />
 
-          {/* Info de link (sem campo visível de subID) */}
-          <p className="text-[11px] text-[#6B7280]">
-            {busyLink ? 'Gerando link com SubIDs…' : trackedUrl ? 'Link com SubIDs pronto.' : 'Sem link ainda.'}
-          </p>
+          {/* Link + utilidades */}
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] text-[#6B7280] flex items-center gap-2">
+              <LinkIcon className="w-3.5 h-3.5" />
+              {busyLink ? 'Gerando link com SubIDs…' : trackedUrl ? 'Link com SubIDs pronto.' : 'Sem link ainda.'}
+            </div>
+            <div className="flex items-center gap-2">
+              <CopyButton text={trackedUrl} label="Copiar link" />
+              <CopyButton text={caption} label="Copiar legenda" />
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
@@ -388,22 +433,25 @@ export default function ComposerDrawer({
             Cancelar
           </button>
           <button
-            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
+            className="px-3.5 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 text-sm disabled:opacity-60"
             disabled={publishDisabled}
             onClick={() => publishNow()}
+            title={`Postar no ${platformLabel(platform)}`}
           >
             {busyLink || busyCaption ? <Loader2 className="animate-spin w-4 h-4" /> : null}
-            Publicar
+            Postar no {platformLabel(platform)}
           </button>
           <button
-            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
+            className="px-3.5 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 text-sm disabled:opacity-60"
             disabled={publishDisabled}
             onClick={() => {
               const when = prompt('Agendar para (ex: 2025-10-05T18:00:00Z):');
               if (when) publishNow(when);
             }}
+            title="Agendar publicação"
           >
-            <CalendarClock className="w-4 h-4" /> Agendar
+            <CalendarClock className="w-4 h-4" />
+            Agendar…
           </button>
         </div>
       </aside>
