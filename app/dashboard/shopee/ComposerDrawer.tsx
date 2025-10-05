@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { X as XIcon, Copy, Check, Link2 } from 'lucide-react';
+import { X as XIcon, Copy, Check, Link2, Loader2, CalendarClock } from 'lucide-react';
 
 type PlatformKey = 'facebook' | 'instagram' | 'x';
 
@@ -26,7 +26,19 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
   );
 }
 
-/** Chama o endpoint de SubIDs e retorna a URL final com subid1..5 aplicados */
+/** Gera legenda com CTA contextual por plataforma (usa Gemini no backend) */
+async function generateCaption(title: string, platform: PlatformKey) {
+  const r = await fetch('/api/ai/gemini-caption', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, platform }),
+  });
+  const j = await r.json();
+  if (!r.ok || j.error) throw new Error(j.error || 'Falha ao gerar legenda');
+  return j.caption as string;
+}
+
+/** Gera link rastreável com SubIDs */
 async function getTrackedUrl(baseUrl: string, platform: PlatformKey) {
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
@@ -34,7 +46,7 @@ async function getTrackedUrl(baseUrl: string, platform: PlatformKey) {
     body: JSON.stringify({ base_url: baseUrl, platform }),
   });
   const j = await r.json();
-  if (!r.ok || j?.error) throw new Error(j?.error || 'Falha ao montar SubIDs');
+  if (!r.ok || j.error) throw new Error(j.error || 'Falha ao montar SubIDs');
   return { url: j.url as string, subids: (j.subids_used as string[]) || [] };
 }
 
@@ -54,57 +66,59 @@ export default function ComposerDrawer({
     url: string;
   };
 }) {
-  const platforms: PlatformKey[] = ['facebook', 'instagram', 'x'];
   const [platform, setPlatform] = React.useState<PlatformKey>('facebook');
   const [trackedUrl, setTrackedUrl] = React.useState('');
-  const [subidsUsed, setSubidsUsed] = React.useState<string[]>([]);
-  const [loadingUrl, setLoadingUrl] = React.useState(false);
   const [caption, setCaption] = React.useState('');
+  const [subidsUsed, setSubidsUsed] = React.useState<string[]>([]);
+  const [loading, setLoading] = React.useState(false);
 
   React.useEffect(() => {
-    if (!product) return;
-    setCaption(`${product.title}\n\nConfira aqui 👉 {link}`);
-  }, [product]);
-
-  async function refreshUrl() {
-    if (!product) return;
-    setLoadingUrl(true);
-    try {
-      const { url, subids } = await getTrackedUrl(product.url, platform);
-      setTrackedUrl(url);
-      setSubidsUsed(subids);
-    } catch {
-      // opcional: toast
-    } finally {
-      setLoadingUrl(false);
+    async function init() {
+      if (!product) return;
+      setLoading(true);
+      try {
+        const [{ url, subids }, generated] = await Promise.all([
+          getTrackedUrl(product.url, platform),
+          generateCaption(product.title, platform),
+        ]);
+        setTrackedUrl(url);
+        setSubidsUsed(subids);
+        setCaption(generated.replace('{link}', url));
+      } catch {
+        setCaption(`${product.title}\n\nConfira aqui 👉 ${product.url}`);
+      } finally {
+        setLoading(false);
+      }
     }
-  }
-
-  React.useEffect(() => {
-    if (open && product) refreshUrl();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (open && product) init();
   }, [open, product, platform]);
 
-  async function publishNow() {
-    // TODO: integre com seu backend/n8n
-    const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product?.url || '');
-    console.log('PUBLISH:', {
-      platform,
-      product_id: product?.id,
-      link: trackedUrl,
-      subidsUsed,
-      caption: finalCaption,
+  async function publishNow(scheduleTime?: string) {
+    if (!product) return;
+    const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url);
+
+    await fetch('/api/integrations/n8n/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        platform,
+        product,
+        trackedUrl,
+        subidsUsed,
+        caption: finalCaption,
+        scheduleTime: scheduleTime || null,
+      }),
     });
-    alert('Mock: publicar/agendar\n\n' + finalCaption);
+
+    alert(scheduleTime ? 'Publicação agendada!' : 'Publicado com sucesso!');
+    onClose();
   }
 
   if (!open || !product) return null;
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* backdrop */}
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      {/* panel */}
       <aside className="absolute right-0 top-0 h-full w-full sm:w-[520px] bg-white border-l shadow-xl flex flex-col">
         <div className="p-4 border-b flex items-center justify-between">
           <div className="font-semibold">Composer</div>
@@ -132,10 +146,10 @@ export default function ComposerDrawer({
           <div>
             <label className="text-sm font-medium text-[#374151]">Plataforma</label>
             <div className="mt-2 flex gap-2">
-              {platforms.map((p) => (
+              {['facebook', 'instagram', 'x'].map((p) => (
                 <button
                   key={p}
-                  onClick={() => setPlatform(p)}
+                  onClick={() => setPlatform(p as PlatformKey)}
                   className={cx(
                     'px-3 py-1.5 rounded-lg border text-sm',
                     platform === p
@@ -147,12 +161,9 @@ export default function ComposerDrawer({
                 </button>
               ))}
             </div>
-            <p className="text-xs text-[#6B7280] mt-1">
-              O link já sai com os SubIDs desta plataforma.
-            </p>
           </div>
 
-          {/* Link com SubIDs */}
+          {/* Link */}
           <div>
             <label className="text-sm font-medium text-[#374151]">Link com SubIDs</label>
             <div className="mt-1 flex gap-2">
@@ -160,15 +171,7 @@ export default function ComposerDrawer({
                 className="w-full border border-[#FFD9CF] rounded px-3 py-2 text-sm"
                 value={trackedUrl}
                 readOnly
-                placeholder="Gerando…"
               />
-              <button
-                className="px-3 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0] text-sm whitespace-nowrap"
-                onClick={refreshUrl}
-                disabled={loadingUrl}
-              >
-                {loadingUrl ? 'Atualizando…' : 'Atualizar'}
-              </button>
               <CopyButton text={trackedUrl} label="Copiar" />
             </div>
             {!!subidsUsed.length && (
@@ -181,17 +184,16 @@ export default function ComposerDrawer({
 
           {/* Caption */}
           <div>
-            <label className="text-sm font-medium text-[#374151]">Caption</label>
+            <label className="text-sm font-medium text-[#374151]">Legenda gerada</label>
             <textarea
-              className="mt-1 w-full border border-[#FFD9CF] rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D]"
+              className="mt-1 w-full border border-[#FFD9CF] rounded-lg p-2 text-sm"
               rows={8}
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
-              placeholder="Escreva sua legenda. Dica: use {link} para inserir a URL rastreada."
             />
             <div className="mt-2 flex gap-2">
               <CopyButton
-                text={caption.replace(/\{link\}/g, trackedUrl || product.url)}
+                text={caption}
                 label="Copiar legenda"
               />
             </div>
@@ -206,10 +208,22 @@ export default function ComposerDrawer({
             Cancelar
           </button>
           <button
-            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white"
-            onClick={publishNow}
+            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2"
+            disabled={loading}
+            onClick={() => publishNow()}
           >
-            Publicar/Agendar
+            {loading && <Loader2 className="animate-spin w-4 h-4" />}
+            Publicar
+          </button>
+          <button
+            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2"
+            disabled={loading}
+            onClick={() => {
+              const when = prompt('Agendar para (ex: 2025-10-05T18:00:00Z):');
+              if (when) publishNow(when);
+            }}
+          >
+            <CalendarClock className="w-4 h-4" /> Agendar
           </button>
         </div>
       </aside>
