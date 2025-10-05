@@ -31,35 +31,35 @@ export const metadata: Metadata = {
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
-      <body className="bg-white text-gray-900 antialiased min-h-screen flex flex-col">
+    <html lang="pt-BR" className="scroll-smooth">
+      <body className="bg-white text-gray-900 dark:bg-[#0b0b0b] dark:text-gray-100 antialiased min-h-screen flex flex-col transition-colors duration-300">
         {children}
 
         {/* Footer global */}
-        <footer className="border-t mt-auto bg-white">
-          <div className="mx-auto max-w-6xl px-4 py-8 text-sm text-gray-600 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <footer className="border-t border-gray-100 dark:border-gray-800 mt-auto bg-white/60 dark:bg-black/60 backdrop-blur">
+          <div className="mx-auto max-w-6xl px-4 py-8 text-sm text-gray-600 dark:text-gray-400 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[#EE4D2D] text-white text-xs font-bold">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[#EE4D2D] text-white text-xs font-bold shadow-sm">
                 SR
               </span>
               <span className="font-medium">SeuReview</span>
             </div>
             <div className="flex items-center gap-4">
-              <a href="/terms" className="hover:text-gray-800">
+              <a href="/terms" className="hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
                 Termos
               </a>
-              <a href="/privacy" className="hover:text-gray-800">
+              <a href="/privacy" className="hover:text-gray-800 dark:hover:text-gray-200 transition-colors">
                 Privacidade
               </a>
               <a
                 href="mailto:suporte@seureview.com.br"
-                className="hover:text-gray-800"
+                className="hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
               >
                 Suporte
               </a>
             </div>
           </div>
-          <p className="text-center text-xs text-gray-400 pb-4">
+          <p className="text-center text-xs text-gray-400 dark:text-gray-600 pb-4">
             © {new Date().getFullYear()} SeuReview. Todos os direitos reservados.
           </p>
         </footer>
