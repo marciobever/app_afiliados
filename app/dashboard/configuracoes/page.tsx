@@ -292,66 +292,128 @@ function ShopeeCredentialsCard() {
   );
 }
 
-/* -------------------------- Shopee SubIDs ------------------------------- */
+/* -------------------------- Shopee SubIDs (corrigido) ------------------------------- */
 function ShopeeSubIdsCard() {
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [text, setText] = useState('');
+  // ajuste aqui se o seu endpoint for /api/integrations/shopee/subids
+  const SUBIDS_API = '/api/shopee/subids';
 
-  // normaliza qualquer formato vindo da API (array OU objeto)
-  function normalizeIncomingSubids(raw: any): string[] {
-    if (Array.isArray(raw)) return raw;
-    if (raw && typeof raw === 'object') {
-      const {
-        main_channel = '',
-        sub_channel = '',
-        extra_1 = '',
-        extra_2 = '',
-      } = raw;
-      // placeholders comuns ocupam slots 3/4
-      return [main_channel, sub_channel, '{{item_id}}', '{{exec}}', extra_1 || extra_2 || ''];
-    }
-    return [];
-  }
+  type KnownPlatform =
+    | 'instagram' | 'facebook' | 'x' | 'pinterest' | 'tiktok'
+    | 'youtube' | 'whatsapp' | 'others';
 
+  const KNOWN: KnownPlatform[] = [
+    'instagram','facebook','x','pinterest','tiktok','youtube','whatsapp','others'
+  ];
+  const LABEL: Record<KnownPlatform,string> = {
+    instagram: 'Instagram',
+    facebook: 'Facebook',
+    x: 'X (Twitter)',
+    pinterest: 'Pinterest',
+    tiktok: 'TikTok',
+    youtube: 'YouTube',
+    whatsapp: 'WhatsApp',
+    others: 'Outros'
+  };
+  const ALIASES: Record<string, KnownPlatform> = {
+    insta: 'instagram', ig: 'instagram',
+    fb: 'facebook', meta: 'facebook',
+    twitter: 'x', tw: 'x',
+    pin: 'pinterest',
+    yt: 'youtube',
+    wa: 'whatsapp',
+  };
+  const normalizePlatform = (s: string): KnownPlatform | undefined => {
+    const k = s.trim().toLowerCase();
+    if (!k) return;
+    if (KNOWN.includes(k as KnownPlatform)) return k as KnownPlatform;
+    if (ALIASES[k]) return ALIASES[k];
+    return;
+  };
+
+  type SubidsPayload = {
+    by_platform: Partial<Record<KnownPlatform, string>>;
+    default?: string;
+    aliases?: Record<string, KnownPlatform>;
+  };
+
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
+  // estado: mapa plataforma -> subid e subid padrão
+  const [byPlatform, setByPlatform] = useState<Partial<Record<KnownPlatform,string>>>({});
+  const [defSubid, setDefSubid]     = useState<string>('');
+  const [platformInput, setPlatformInput] = useState('');
+  const [showAdvanced, setShowAdvanced]   = useState(false); // só para dica textual
+
+  // carrega do backend (formato novo ou legado é normalizado no backend)
   useEffect(() => {
     (async () => {
-      setLoading(true);
       try {
-        const r = await fetch('/api/integrations/shopee/subids', { cache: 'no-store' });
+        setLoading(true);
+        const r = await fetch(SUBIDS_API, { cache: 'no-store' });
         const j = await r.json();
-        const list = normalizeIncomingSubids(j?.subids);
-        setText(subIdsToText(list));
-      } catch {
-        /* noop */
+        const payload = (j?.subids || {}) as SubidsPayload;
+
+        // garante todas as chaves conhecidas, mas não exibe placeholder nenhum
+        const filled: Partial<Record<KnownPlatform,string>> = { ...(payload.by_platform || {}) };
+        KNOWN.forEach(k => { if (filled[k] === undefined) filled[k] = ''; });
+        setByPlatform(filled);
+        setDefSubid(payload.default || '');
+        setError(null);
+      } catch (e: any) {
+        setError(e?.message || 'Falha ao carregar SubIDs');
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  const count = useMemo(() => normSubIdsFromText(text).length, [text]);
+  function addPlatformFromInput() {
+    const norm = normalizePlatform(platformInput);
+    if (!norm) {
+      setError('Plataforma inválida. Exemplos: Instagram, Facebook, X, Pinterest…');
+      return;
+    }
+    setError(null);
+    setByPlatform(prev => ({ ...prev, [norm]: prev[norm] ?? '' }));
+    setPlatformInput('');
+  }
+
+  function removePlatform(k: KnownPlatform) {
+    setByPlatform(prev => {
+      const next = { ...prev };
+      delete next[k];
+      return next;
+    });
+  }
+
+  function updateSubid(k: KnownPlatform, val: string) {
+    setByPlatform(prev => ({ ...prev, [k]: val }));
+  }
 
   async function save() {
-    setSaving(true);
     try {
-      const list = normSubIdsFromText(text);
-      // mapeia para objeto também (backend pode aceitar ambos)
-      const obj = {
-        main_channel: list[0] || '',
-        sub_channel: list[1] || '',
-        extra_1: list[4] || '',
-        extra_2: '',
+      setSaving(true);
+      const payload: SubidsPayload = {
+        by_platform: byPlatform,
+        default: defSubid || '',
       };
-      const r = await fetch('/api/integrations/shopee/subids', {
+      const r = await fetch(SUBIDS_API, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subids: list, ...obj }),
+        body: JSON.stringify(payload),
       });
       const j = await r.json();
-      if (!r.ok || j?.error) toast(j?.error || 'Falha ao salvar SubIDs');
-      else toast('SubIDs salvos!');
+      if (!r.ok || j?.error) {
+        setError(j?.error || 'Falha ao salvar SubIDs');
+        toast(j?.error || 'Falha ao salvar SubIDs');
+      } else {
+        setError(null);
+        toast('SubIDs salvos!');
+      }
     } catch (e: any) {
+      setError(e?.message || 'Erro ao salvar');
       toast(e?.message || 'Erro ao salvar');
     } finally {
       setSaving(false);
@@ -361,8 +423,8 @@ function ShopeeSubIdsCard() {
   return (
     <Card>
       <CardHeader
-        title="Shopee — SubIDs"
-        subtitle="Até 5 SubIDs (um por linha). Suporta placeholders: {{item_id}} e {{exec}}."
+        title="Shopee — SubIDs por plataforma"
+        subtitle="Adicione a plataforma e informe o SubID (opcional). O sistema usa automaticamente o SubID correspondente ao publicar."
         right={
           loading ? (
             <div className="flex items-center gap-2 text-sm text-[#6B7280]">
@@ -370,35 +432,94 @@ function ShopeeSubIdsCard() {
               Carregando…
             </div>
           ) : (
-            <span className="text-xs text-[#6B7280]">{count}/5</span>
+            <span className="text-xs text-[#6B7280]">
+              {Object.keys(byPlatform).length} plataformas
+            </span>
           )
         }
       />
       <CardBody>
-        <Textarea
-          rows={6}
-          placeholder={`_canal_principal
-_sub_canal
-{{item_id}}
-{{exec}}
-postauto`}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-        <p className="text-xs text-[#6B7280] mt-2">
-          Ex.: <code>main_channel</code>, <code>sub_channel</code>, <code>{'{'}item_id{'}'}</code>, <code>{'{'}exec{'}'}</code>, <code>postauto</code>.
-        </p>
-        <div className="mt-5 flex justify-end">
-          <Button onClick={save} disabled={saving}>
-            {saving ? (
-              <span className="inline-flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" /> Salvando…
-              </span>
-            ) : (
-              'Salvar'
-            )}
-          </Button>
+        {/* Input de plataforma */}
+        <div className="flex gap-2 mb-3">
+          <Input
+            placeholder="Digite a plataforma e pressione Enter (ex.: Instagram, Facebook, X)"
+            value={platformInput}
+            onChange={(e) => setPlatformInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPlatformFromInput(); } }}
+          />
+          <Button onClick={addPlatformFromInput}>Adicionar</Button>
         </div>
+
+        {/* Cards por plataforma */}
+        <div className="grid gap-3 md:grid-cols-2">
+          {Object.entries(byPlatform).map(([k, val]) => {
+            const key = k as KnownPlatform;
+            return (
+              <div key={key} className="border rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium">{LABEL[key] ?? key}</span>
+                  <button
+                    className="text-xs text-red-600 hover:underline"
+                    onClick={() => removePlatform(key)}
+                    type="button"
+                  >
+                    remover
+                  </button>
+                </div>
+                <Input
+                  placeholder="SubID (opcional)"
+                  value={val || ''}
+                  onChange={(e) => updateSubid(key, e.target.value)}
+                />
+                {showAdvanced && (
+                  <p className="mt-1 text-[12px] text-[#6B7280]">
+                    Dica: variáveis avançadas como <code>{'{'}item_id{'}'}</code> e <code>{'{'}exec{'}'}</code> são opcionais.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* SubID padrão */}
+        <div className="mt-4">
+          <Field label="SubID padrão (fallback)" hint="Usado quando a plataforma não tiver um SubID específico.">
+            <Input
+              placeholder="Ex.: postauto"
+              value={defSubid}
+              onChange={(e) => setDefSubid(e.target.value)}
+            />
+          </Field>
+        </div>
+
+        {/* Avançado + ações */}
+        <div className="mt-4 flex items-center justify-between">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={showAdvanced}
+              onChange={(e)=>setShowAdvanced(e.target.checked)}
+            />
+            Mostrar opções avançadas (variáveis)
+          </label>
+
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => window.location.reload()} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Salvando…
+                </span>
+              ) : (
+                'Salvar'
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </CardBody>
     </Card>
   );
