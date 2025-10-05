@@ -1,8 +1,7 @@
-export default function Home() {
-  return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold">Home OK</h1>
-      <p className="text-gray-600">Abra <code>/dashboard/shopee</code>.</p>
-    </main>
-  );
+// server component por padrão
+import { redirect } from 'next/navigation';
+
+export default function Index() {
+  redirect('/'); // se o seu landing estiver em /(site)/page.tsx e for a rota raiz,
+                 // use redirect('/home') se você colocar em /home
 }
