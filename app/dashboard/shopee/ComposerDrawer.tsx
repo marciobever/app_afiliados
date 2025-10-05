@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { X as XIcon, Loader2, CalendarClock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X as XIcon, Loader2, CalendarClock } from 'lucide-react';
 
 type PlatformKey = 'facebook' | 'instagram' | 'x';
 
@@ -9,7 +9,7 @@ function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
 
-// Gera legenda com CTA (Gemini no backend)
+/** Gera legenda com CTA via Gemini (insta/facebook diferentes) */
 async function generateCaption(title: string, platform: PlatformKey) {
   const r = await fetch('/api/ai/gemini-caption', {
     method: 'POST',
@@ -21,12 +21,12 @@ async function generateCaption(title: string, platform: PlatformKey) {
   return j.caption as string;
 }
 
-// Pede o link rastreado ao webhook 2 via proxy Next
-async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product: any) {
+/** Cria link com SubIDs automáticos (n8n shopee_subids) */
+async function getTrackedUrl(baseUrl: string, platform: PlatformKey) {
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ base_url: baseUrl, platform, product }),
+    body: JSON.stringify({ base_url: baseUrl, platform }),
   });
   const j = await r.json();
   if (!r.ok || j.error) throw new Error(j.error || 'Falha ao montar SubIDs');
@@ -54,27 +54,24 @@ export default function ComposerDrawer({
   const [caption, setCaption] = React.useState('');
   const [subidsUsed, setSubidsUsed] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
-  const [status, setStatus] = React.useState<{ type: 'ok' | 'err' | null; msg: string }>({ type: null, msg: '' });
 
-  // gera automaticamente: link com subids + legenda
+  // Gera link + legenda automaticamente ao abrir ou trocar plataforma
   React.useEffect(() => {
     async function init() {
       if (!product) return;
       setLoading(true);
-      setStatus({ type: null, msg: '' });
       try {
         const [{ url, subids }, generated] = await Promise.all([
-          getTrackedUrl(product.url, platform, product),
+          getTrackedUrl(product.url, platform),
           generateCaption(product.title, platform),
         ]);
         setTrackedUrl(url);
         setSubidsUsed(subids);
         setCaption(generated.replace('{link}', url));
-      } catch (e: any) {
-        setCaption(`${product.title}\n\nConfira aqui 👉 ${product?.url ?? ''}`);
-        setTrackedUrl(product?.url ?? '');
-        setSubidsUsed([]);
-        setStatus({ type: 'err', msg: e?.message || 'Não foi possível preparar link/legenda.' });
+      } catch {
+        // fallback simples
+        setTrackedUrl(product.url);
+        setCaption(`${product.title}\n\nConfira aqui 👉 ${product.url}`);
       } finally {
         setLoading(false);
       }
@@ -82,43 +79,43 @@ export default function ComposerDrawer({
     if (open && product) init();
   }, [open, product, platform]);
 
-  // publicar/agendar
   async function publishNow(scheduleTime?: string) {
     if (!product) return;
-    setLoading(true);
-    setStatus({ type: null, msg: '' });
-    try {
-      const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url);
+    const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url);
 
-      const resp = await fetch('/api/integrations/n8n/publish', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          platform,
-          product,
-          trackedUrl,
-          subidsUsed,
-          caption: finalCaption,
-          scheduleTime: scheduleTime || null,
-        }),
-      });
-
-      if (!resp.ok) {
-        const t = await resp.text();
-        throw new Error(t || `HTTP ${resp.status}`);
+    // normaliza agendamento para ISO (ou não envia)
+    let iso: string | null = null;
+    if (scheduleTime) {
+      const d = new Date(scheduleTime);
+      if (isNaN(d.getTime())) {
+        alert('Data inválida. Use algo como 2025-10-05T18:00:00-03:00');
+        return;
       }
-
-      setStatus({
-        type: 'ok',
-        msg: scheduleTime ? 'Publicação agendada!' : 'Publicado com sucesso!',
-      });
-      // fecha após pequeno delay
-      setTimeout(onClose, 900);
-    } catch (e: any) {
-      setStatus({ type: 'err', msg: e?.message || 'Falha ao publicar.' });
-    } finally {
-      setLoading(false);
+      iso = d.toISOString();
     }
+
+    const res = await fetch('/api/integrations/n8n/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        platform,
+        product,
+        trackedUrl,
+        subidsUsed,
+        caption: finalCaption,
+        scheduleTime: iso,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('Publish error:', err);
+      alert('Falha ao publicar: ' + (err?.error || res.status));
+      return;
+    }
+
+    alert(iso ? 'Publicação agendada!' : 'Publicado com sucesso!');
+    onClose();
   }
 
   if (!open || !product) return null;
@@ -127,11 +124,15 @@ export default function ComposerDrawer({
     <div className="fixed inset-0 z-50">
       {/* backdrop */}
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      {/* painel */}
+      {/* panel */}
       <aside className="absolute right-0 top-0 h-full w-full sm:w-[520px] bg-white border-l shadow-xl flex flex-col">
         <div className="p-4 border-b flex items-center justify-between">
           <div className="font-semibold">Composer</div>
-          <button className="p-2 rounded hover:bg-[#FFF4F0]" aria-label="Fechar" onClick={onClose}>
+          <button
+            className="p-2 rounded hover:bg-[#FFF4F0]"
+            aria-label="Fechar"
+            onClick={onClose}
+          >
             <XIcon className="w-5 h-5" />
           </button>
         </div>
@@ -147,7 +148,7 @@ export default function ComposerDrawer({
             </div>
           </div>
 
-          {/* Plataforma */}
+          {/* Plataforma (clicar já refaz SubIDs + legenda) */}
           <div>
             <label className="text-sm font-medium text-[#374151]">Plataforma</label>
             <div className="mt-2 flex gap-2">
@@ -155,7 +156,6 @@ export default function ComposerDrawer({
                 <button
                   key={p}
                   onClick={() => setPlatform(p)}
-                  disabled={loading}
                   className={cx(
                     'px-3 py-1.5 rounded-lg border text-sm',
                     platform === p
@@ -168,8 +168,24 @@ export default function ComposerDrawer({
               ))}
             </div>
             <p className="text-xs text-[#6B7280] mt-1">
-              O link rastreado (com SubIDs) é gerado automaticamente conforme a plataforma.
+              Ao trocar a plataforma, o link rastreado e a legenda são atualizados automaticamente.
             </p>
+          </div>
+
+          {/* Link (somente leitura, sem barra de ações) */}
+          <div>
+            <label className="text-sm font-medium text-[#374151]">Link rastreado</label>
+            <input
+              className="mt-1 w-full border border-[#FFD9CF] rounded px-3 py-2 text-sm"
+              value={trackedUrl}
+              readOnly
+              placeholder={loading ? 'Gerando…' : ''}
+            />
+            {!!subidsUsed.length && (
+              <p className="mt-1 text-xs text-[#6B7280]">
+                SubIDs: {subidsUsed.join(' · ')}
+              </p>
+            )}
           </div>
 
           {/* Caption */}
@@ -180,37 +196,21 @@ export default function ComposerDrawer({
               rows={8}
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
+              placeholder={loading ? 'Gerando…' : 'Edite se quiser antes de publicar'}
             />
-            {!!subidsUsed.length && (
-              <p className="mt-1 text-xs text-[#6B7280]">
-                SubIDs aplicados: <span className="font-medium">{subidsUsed.join(' · ')}</span>
-              </p>
-            )}
           </div>
-
-          {/* status */}
-          {status.type && (
-            <div
-              className={cx(
-                'flex items-center gap-2 text-sm rounded-lg p-2 border',
-                status.type === 'ok'
-                  ? 'text-green-700 border-green-200 bg-green-50'
-                  : 'text-red-700 border-red-200 bg-red-50'
-              )}
-            >
-              {status.type === 'ok' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-              {status.msg}
-            </div>
-          )}
         </div>
 
         <div className="p-4 border-t flex justify-end gap-2">
-          <button className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]" onClick={onClose}>
+          <button
+            className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]"
+            onClick={onClose}
+          >
             Cancelar
           </button>
           <button
             className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
-            disabled={loading}
+            disabled={loading || !trackedUrl || !caption}
             onClick={() => publishNow()}
           >
             {loading && <Loader2 className="animate-spin w-4 h-4" />}
@@ -218,14 +218,13 @@ export default function ComposerDrawer({
           </button>
           <button
             className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
-            disabled={loading}
+            disabled={loading || !trackedUrl || !caption}
             onClick={() => {
-              const when = prompt('Agendar para (ex: 2025-10-05T18:00:00Z):');
+              const when = prompt('Agendar (ex: 2025-10-05T18:00:00-03:00):');
               if (when) publishNow(when);
             }}
           >
-            <CalendarClock className="w-4 h-4" />
-            Agendar
+            <CalendarClock className="w-4 h-4" /> Agendar
           </button>
         </div>
       </aside>
