@@ -10,8 +10,6 @@ import {
   CalendarClock,
   Globe2,
   Wand2,
-  Link as LinkIcon,
-  MessageSquareText,
 } from 'lucide-react';
 
 type PlatformKey = 'facebook' | 'instagram' | 'x';
@@ -25,13 +23,12 @@ type Product = {
   url: string;
 };
 
+const N8N_SOCIAL_URL =
+  process.env.NEXT_PUBLIC_N8N_SOCIAL_URL ||
+  'https://n8n.seureview.com.br/webhook/social';
+
 function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
-}
-
-function platformLabel(p: PlatformKey) {
-  if (p === 'x') return 'X (Twitter)';
-  return p[0].toUpperCase() + p.slice(1);
 }
 
 function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }) {
@@ -42,10 +39,9 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
       onClick={async () => {
         await navigator.clipboard.writeText(text || '');
         setOk(true);
-        setTimeout(() => setOk(false), 900);
+        setTimeout(() => setOk(false), 1000);
       }}
       disabled={!text}
-      title={label}
     >
       {ok ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
       {ok ? 'Copiado' : label}
@@ -113,20 +109,20 @@ function ensureSafeProduct(baseUrl: string, p?: Product | null): Product {
     deriveShopeeIdFromUrl(baseUrl);
 
   return {
-    id: id || '_',
+    id,
     title: p?.title ?? '',
     price:
-      p?.price == null
-        ? null
-        : typeof p.price === 'number'
+      typeof p?.price === 'number'
         ? p.price
-        : Number(p.price as any),
+        : p?.price != null
+        ? Number(p.price as any)
+        : null,
     rating:
-      p?.rating == null
-        ? null
-        : typeof p.rating === 'number'
+      typeof p?.rating === 'number'
         ? p.rating
-        : Number(p.rating as any),
+        : p?.rating != null
+        ? Number(p.rating as any)
+        : null,
     image: p?.image ?? '',
     url: p?.url ?? baseUrl,
   };
@@ -174,7 +170,7 @@ async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payl
   return { variants, keyword };
 }
 
-/** Publica nas redes: envia TUDO que o webhook precisa + legenda */
+/** Publica nas redes chamando diretamente o webhook do n8n */
 async function publishToSocial({
   platform,
   product,
@@ -188,39 +184,44 @@ async function publishToSocial({
   caption: string;
   scheduleTime?: string;
 }) {
-  const safeProduct = ensureSafeProduct(product.url, product);
-
-  // payload que vai para o n8n webhook social (via nosso proxy server-side)
+  // payload completo para o n8n
   const payload = {
-    platform,                   // 'facebook' | 'instagram' | 'x'
-    caption,                    // legenda final
-    shortlink: trackedUrl,      // link curto com subid embutido
-    base_url: safeProduct.url,  // url canônica do produto
-    product: safeProduct,       // produto normalizado
+    platform,
+    platform_subid: platform, // subid = plataforma (conforme workflow)
+    caption,
+    link: trackedUrl,         // shortlink s.shopee
+    product: {
+      id: product.id || deriveShopeeIdFromUrl(product.url),
+      title: product.title,
+      price: product.price,
+      rating: product.rating,
+      image: product.image,
+      url: product.url,
+    },
     scheduleTime: scheduleTime || null,
-    source: 'dashboard_composer',
-    meta: {
-      generatedAt: new Date().toISOString(),
-      platform_subid: platform, // subid == plataforma (conforme workflow)
+    context: {
+      // extras úteis pro fluxo/log
+      source: 'composer',
+      ts: new Date().toISOString(),
+      // mantém também em plano superior se te ajudar no n8n
+      productId: product.id || deriveShopeeIdFromUrl(product.url),
+      productUrl: product.url,
     },
   };
 
-  // 1) via API interna (recomendado p/ evitar CORS no client)
-  const r = await fetch('/api/integrations/n8n/social', {
+  // chamada direta ao webhook do n8n (CORS precisa estar liberado no n8n)
+  const res = await fetch(N8N_SOCIAL_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    // se usares api-key no n8n, comente/ajuste a linha abaixo
+    // headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.NEXT_PUBLIC_N8N_KEY ?? '' },
     body: JSON.stringify(payload),
   });
 
-  // // 2) se quiser bater direto no webhook do n8n, use isso (atenção ao CORS no client!):
-  // const r = await fetch('https://n8n.seureview.com.br/webhook/social', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json', 'x-api-key': '<SEU_TOKEN_AQUI_OPCIONAL>' },
-  //   body: JSON.stringify(payload),
-  // });
-
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || j?.error) throw new Error(j?.error || 'Falha ao publicar nas redes sociais');
+  const data = await res.json().catch(() => ({} as any));
+  if (!res.ok || data?.error) {
+    throw new Error(data?.message || data?.error || 'Falha ao publicar nas redes sociais');
+  }
 }
 
 /* -------------------- componente -------------------- */
@@ -340,12 +341,10 @@ export default function ComposerDrawer({
             <img src={product.image} alt="" className="w-20 h-20 rounded object-cover" />
             <div className="min-w-0">
               <div className="font-medium line-clamp-2">{product.title}</div>
-              <div className="text-sm text-gray-600">
-                {product.price != null ? `R$ ${Number(product.price).toFixed(2)}` : 'Preço: —'}
-              </div>
-              <div className="text-xs text-gray-500">
-                ID: {product.id || deriveShopeeIdFromUrl(product.url)}
-              </div>
+              {typeof product.price === 'number' && (
+                <div className="text-sm text-gray-600">R$ {Number(product.price).toFixed(2)}</div>
+              )}
+              <div className="text-xs text-gray-500">ID: {product.id || deriveShopeeIdFromUrl(product.url)}</div>
             </div>
           </div>
 
@@ -370,7 +369,7 @@ export default function ComposerDrawer({
                   )}
                   disabled={busyLink || busyCaption}
                 >
-                  {platformLabel(p)}
+                  {p === 'x' ? 'X (Twitter)' : p[0].toUpperCase() + p.slice(1)}
                 </button>
               ))}
             </div>
@@ -414,16 +413,10 @@ export default function ComposerDrawer({
             }
           />
 
-          {/* Link + utilidades */}
-          <div className="flex items-center justify-between">
-            <div className="text-[11px] text-[#6B7280] flex items-center gap-2">
-              <LinkIcon className="w-3.5 h-3.5" />
-              {busyLink ? 'Gerando link com SubIDs…' : trackedUrl ? 'Link com SubIDs pronto.' : 'Sem link ainda.'}
-            </div>
-            <div className="flex items-center gap-2">
-              <CopyButton text={trackedUrl} label="Copiar link" />
-              <CopyButton text={caption} label="Copiar legenda" />
-            </div>
+          {/* Info de link (sem campo visível de subID) */}
+          <div className="flex items-center justify-between text-[11px] text-[#6B7280]">
+            <span>{busyLink ? 'Gerando link com SubIDs…' : trackedUrl ? 'Link com SubIDs pronto.' : 'Sem link ainda.'}</span>
+            {trackedUrl ? <CopyButton text={trackedUrl} label="Copiar link" /> : null}
           </div>
         </div>
 
@@ -433,25 +426,22 @@ export default function ComposerDrawer({
             Cancelar
           </button>
           <button
-            className="px-3.5 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 text-sm disabled:opacity-60"
+            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
             disabled={publishDisabled}
             onClick={() => publishNow()}
-            title={`Postar no ${platformLabel(platform)}`}
           >
             {busyLink || busyCaption ? <Loader2 className="animate-spin w-4 h-4" /> : null}
-            Postar no {platformLabel(platform)}
+            Publicar
           </button>
           <button
-            className="px-3.5 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 text-sm disabled:opacity-60"
+            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
             disabled={publishDisabled}
             onClick={() => {
               const when = prompt('Agendar para (ex: 2025-10-05T18:00:00Z):');
               if (when) publishNow(when);
             }}
-            title="Agendar publicação"
           >
-            <CalendarClock className="w-4 h-4" />
-            Agendar…
+            <CalendarClock className="w-4 h-4" /> Agendar
           </button>
         </div>
       </aside>
