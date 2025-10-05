@@ -1,12 +1,16 @@
 // app/layout.tsx
 import "./globals.css";
 
-export const metadata = { title: "SeuReview", description: "Automação para afiliados" };
+export const metadata = {
+  title: "SeuReview",
+  description: "Automação para afiliados (Shopee + IG/FB)",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body className="bg-white text-gray-900">{children}</body>
+      {/* NÃO defina bg/text aqui para não “sujar” os sub-layouts */}
+      <body className="antialiased">{children}</body>
     </html>
   );
 }
