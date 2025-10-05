@@ -16,13 +16,11 @@ type ApiItem = {
 function TerminalCard({
   product,
   selected,
-  onCompose,
-  onToggleSelect,
+  onSelectAndCompose,
 }: {
   product: ApiItem;
   selected?: boolean;
-  onCompose: () => void;
-  onToggleSelect: () => void;
+  onSelectAndCompose: () => void;
 }) {
   return (
     <aside
@@ -42,52 +40,39 @@ function TerminalCard({
         <p className="text-sm text-gray-400">shopee-cli</p>
       </div>
 
-      <div className="mt-4 space-y-3">
-        {/* 👉 imagem abre o Composer */}
-        <div
-          className="aspect-[4/3] bg-[#0f0f0f] rounded-lg overflow-hidden border border-[#1f1f1f] cursor-pointer"
-          onClick={onCompose}
-          role="button"
-          aria-label="Abrir composer"
-        >
-          <img
-            src={product.image}
-            alt={product.title}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
+      {/* Ao clicar na área de imagem/título abre o composer */}
+      <button
+        onClick={onSelectAndCompose}
+        className="mt-4 w-full text-left space-y-3 focus:outline-none"
+        aria-label="Abrir composer"
+      >
+        <div className="aspect-[4/3] bg-[#0f0f0f] rounded-lg overflow-hidden border border-[#1f1f1f]">
+          <img src={product.image} alt={product.title} className="w-full h-full object-cover" loading="lazy" />
         </div>
 
         <div className="space-y-1">
-          {/* 👉 título também abre o Composer */}
-          <p
-            className="text-[#FF6A3C] cursor-pointer line-clamp-2"
-            onClick={onCompose}
-            title="Abrir composer"
-          >
-            $ {product.title}
-          </p>
+          <p className="text-[#FF6A3C]">$ {product.title}</p>
           <p className="text-gray-300">
             <span className="text-amber-300">★</span> {product.rating.toFixed(1)} — R${' '}
             {Number(product.price ?? 0).toFixed(2)}
           </p>
           <p className="text-gray-500 text-xs"># {product.id}</p>
         </div>
+      </button>
 
-        <div className="flex gap-2 pt-1">
-          {/* ❌ removido o botão “Compor”  */}
-          <button
-            className={[
-              'px-3 py-1.5 rounded text-sm border transition-colors',
-              selected
-                ? 'bg-[#EE4D2D] hover:bg-[#D8431F] text-white border-[#EE4D2D]'
-                : 'bg-[#10B981] hover:bg-[#0EA371] text-white border-[#0EA371]',
-            ].join(' ')}
-            onClick={onToggleSelect}
-          >
-            {selected ? 'Selecionado' : 'Selecionar'}
-          </button>
-        </div>
+      <div className="flex gap-2 pt-1">
+        {/* Único botão: seleciona e abre o composer */}
+        <button
+          className={[
+            'px-3 py-1.5 rounded text-sm border transition-colors w-full',
+            selected
+              ? 'bg-[#EE4D2D] hover:bg-[#D8431F] text-white border-[#EE4D2D]'
+              : 'bg-[#10B981] hover:bg-[#0EA371] text-white border-[#0EA371]',
+          ].join(' ')}
+          onClick={onSelectAndCompose}
+        >
+          {selected ? 'Selecionado • Editar' : 'Selecionar'}
+        </button>
       </div>
     </aside>
   );
@@ -148,14 +133,15 @@ export default function Products({
     }
   }
 
-  function toggleSelect(id: string) {
-    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  function selectAndOpen(p: ApiItem) {
+    setSelected((s) => (s.includes(p.id) ? s : [...s, p.id]));
+    setComposerProduct(p);
+    setComposerOpen(true);
   }
 
   const filtered = React.useMemo(() => {
     let out = items.slice();
-    if (onlyPromo)
-      out = out.filter((p: any) => Array.isArray((p as any).tags) && (p as any).tags.includes('promo'));
+    if (onlyPromo) out = out.filter((p: any) => Array.isArray((p as any).tags) && (p as any).tags.includes('promo'));
     if (minRating > 0) out = out.filter((p) => Number(p.rating || 0) >= minRating);
     const q = query.trim().toLowerCase();
     if (q) out = out.filter((p) => p.title.toLowerCase().includes(q));
@@ -213,12 +199,14 @@ export default function Products({
         </div>
       </div>
 
-      {/* Erro */}
+      {/* Estado de erro */}
       {err && (
-        <div className="p-3 rounded-lg border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318] text-sm">{err}</div>
+        <div className="p-3 rounded-lg border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318] text-sm">
+          {err}
+        </div>
       )}
 
-      {/* Mensagem inicial */}
+      {/* Mensagem inicial sem busca */}
       {!loading && !err && items.length === 0 && (
         <div className="p-4 rounded-lg border border-[#FFD9CF] bg-white text-sm text-[#6B7280]">
           Faça uma busca para listar produtos.
@@ -232,18 +220,18 @@ export default function Products({
             <TerminalCard
               product={p}
               selected={selected.includes(p.id)}
-              onToggleSelect={() => toggleSelect(p.id)}
-              onCompose={() => {
-                setComposerProduct(p);
-                setComposerOpen(true);
-              }}
+              onSelectAndCompose={() => selectAndOpen(p)}
             />
           </div>
         ))}
       </div>
 
-      {/* Drawer */}
-      <ComposerDrawer open={composerOpen} onClose={() => setComposerOpen(false)} product={composerProduct} />
+      {/* Drawer de composição */}
+      <ComposerDrawer
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        product={composerProduct}
+      />
     </section>
   );
 }
