@@ -86,7 +86,7 @@ export default function ComposerDrawer({
   }, [open, product, platform]);
 
   async function publishNow() {
-    // TODO: plugue no seu backend/n8n
+    // TODO: integre com seu backend/n8n
     const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product?.url || '');
     console.log('PUBLISH:', {
       platform,
