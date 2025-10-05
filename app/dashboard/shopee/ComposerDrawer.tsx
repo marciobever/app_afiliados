@@ -26,7 +26,7 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
   );
 }
 
-/** 🔹 Gera legenda com CTA via Gemini (insta/facebook diferentes) */
+/** gera legenda (insta/fb diferentes) */
 async function generateCaption(title: string, platform: PlatformKey) {
   const r = await fetch('/api/ai/gemini-caption', {
     method: 'POST',
@@ -38,7 +38,7 @@ async function generateCaption(title: string, platform: PlatformKey) {
   return j.caption as string;
 }
 
-/** 🔹 Cria link com SubIDs automáticos */
+/** monta link com subids */
 async function getTrackedUrl(baseUrl: string, platform: PlatformKey) {
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
@@ -122,11 +122,7 @@ export default function ComposerDrawer({
       <aside className="absolute right-0 top-0 h-full w-full sm:w-[520px] bg-white border-l shadow-xl flex flex-col">
         <div className="p-4 border-b flex items-center justify-between">
           <div className="font-semibold">Composer</div>
-          <button
-            className="p-2 rounded hover:bg-[#FFF4F0]"
-            aria-label="Fechar"
-            onClick={onClose}
-          >
+          <button className="p-2 rounded hover:bg-[#FFF4F0]" aria-label="Fechar" onClick={onClose}>
             <XIcon className="w-5 h-5" />
           </button>
         </div>
@@ -146,10 +142,10 @@ export default function ComposerDrawer({
           <div>
             <label className="text-sm font-medium text-[#374151]">Plataforma</label>
             <div className="mt-2 flex gap-2">
-              {['facebook', 'instagram', 'x'].map((p) => (
+              {(['facebook', 'instagram', 'x'] as PlatformKey[]).map((p) => (
                 <button
                   key={p}
-                  onClick={() => setPlatform(p as PlatformKey)}
+                  onClick={() => setPlatform(p)}
                   className={cx(
                     'px-3 py-1.5 rounded-lg border text-sm',
                     platform === p
@@ -167,11 +163,7 @@ export default function ComposerDrawer({
           <div>
             <label className="text-sm font-medium text-[#374151]">Link com SubIDs</label>
             <div className="mt-1 flex gap-2">
-              <input
-                className="w-full border border-[#FFD9CF] rounded px-3 py-2 text-sm"
-                value={trackedUrl}
-                readOnly
-              />
+              <input className="w-full border border-[#FFD9CF] rounded px-3 py-2 text-sm" value={trackedUrl} readOnly />
               <CopyButton text={trackedUrl} label="Copiar" />
             </div>
             {!!subidsUsed.length && (
@@ -198,10 +190,7 @@ export default function ComposerDrawer({
         </div>
 
         <div className="p-4 border-t flex justify-end gap-2">
-          <button
-            className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]"
-            onClick={onClose}
-          >
+          <button className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]" onClick={onClose}>
             Cancelar
           </button>
           <button
