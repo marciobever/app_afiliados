@@ -48,9 +48,9 @@ function normalizePlatform(raw?: string): KnownPlatform | undefined {
 
 /* ---------------- Estrutura dos SubIDs ---------------- */
 type SubidsPayload = {
-  by_platform: Partial<Record<KnownPlatform, string>>;
-  default?: string;
-  aliases?: Record<string, KnownPlatform>;
+  by_platform: Partial<Record<KnownPlatform, string>>; // cada plataforma: até 5 valores separados por vírgula/linha/;
+  default?: string;                                     // fallback se a plataforma não tiver específico
+  aliases?: Record<string, KnownPlatform>;              // opcional
 };
 
 function emptySubids(): SubidsPayload {
@@ -88,23 +88,26 @@ function normalizeDbSubids(dbValue: any): SubidsPayload {
   return migrateLegacyToNew(dbValue);
 }
 
-/* ---------------- Função utilitária ---------------- */
-function appendSubid(baseUrl: string, subids: string[]): string {
+/* ---------------- Utils ---------------- */
+function splitToMax5(raw: string): string[] {
+  return String(raw || "")
+    .split(/\n|,|;/g)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .slice(0, 5); // Shopee permite até 5
+}
+
+function appendSubids(baseUrl: string, subids: string[]): string {
   try {
     const u = new URL(baseUrl);
-    // limpa subid1..subid5 antigos
     for (let i = 1; i <= 5; i++) u.searchParams.delete(`subid${i}`);
-    // aplica os novos (limite 5)
-    subids.slice(0, 5).forEach((v, i) => u.searchParams.set(`subid${i + 1}`, v));
+    subids.forEach((v, i) => u.searchParams.set(`subid${i + 1}`, v));
     return u.toString();
   } catch {
     const hasQ = baseUrl.includes("?");
     const sep = hasQ ? "&" : "?";
     return subids.length
-      ? `${baseUrl}${sep}${subids
-          .slice(0, 5)
-          .map((v, i) => `subid${i + 1}=${encodeURIComponent(v)}`)
-          .join("&")}`
+      ? baseUrl + sep + subids.map((v, i) => `subid${i + 1}=${encodeURIComponent(v)}`).join("&")
       : baseUrl;
   }
 }
@@ -176,6 +179,8 @@ export async function PUT(req: NextRequest) {
 /**
  * POST: gera link com até 5 subids da plataforma.
  * body: { base_url: string; platform?: string }
+ * - platform: "instagram" | "facebook" | "x" | ...
+ * - usa `default` se a plataforma não tiver específico
  */
 export async function POST(req: NextRequest) {
   try {
@@ -202,13 +207,8 @@ export async function POST(req: NextRequest) {
     const rawValue =
       (resolvedPlat && cfg.by_platform?.[resolvedPlat]) || cfg.default || "";
 
-    const subidList = String(rawValue)
-      .split(/\n|,|;/g)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 5); // Shopee permite até 5
-
-    const finalUrl = appendSubid(String(base_url), subidList);
+    const subidList = splitToMax5(rawValue); // ← garante no máximo 5
+    const finalUrl = appendSubids(String(base_url), subidList);
 
     return j({
       base_url,
