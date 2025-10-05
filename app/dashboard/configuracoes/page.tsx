@@ -292,10 +292,10 @@ function ShopeeCredentialsCard() {
   );
 }
 
-/* -------------------------- Shopee SubIDs (corrigido) ------------------------------- */
+/* -------------------------- Shopee SubIDs (corrigido) ------------------- */
 function ShopeeSubIdsCard() {
-  // ajuste aqui se o seu endpoint for /api/integrations/shopee/subids
-  const SUBIDS_API = '/api/shopee/subids';
+  // 🔧 AJUSTE AQUI se sua rota for /api/integrations/shopee/subids
+  const SUBIDS_API = '/api/integrations/shopee/subids';
 
   type KnownPlatform =
     | 'instagram' | 'facebook' | 'x' | 'pinterest' | 'tiktok'
@@ -333,35 +333,45 @@ function ShopeeSubIdsCard() {
   type SubidsPayload = {
     by_platform: Partial<Record<KnownPlatform, string>>;
     default?: string;
-    aliases?: Record<string, KnownPlatform>;
   };
 
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState<string | null>(null);
 
-  // estado: mapa plataforma -> subid e subid padrão
+  // estado: mapa plataforma -> subid e fallback
   const [byPlatform, setByPlatform] = useState<Partial<Record<KnownPlatform,string>>>({});
   const [defSubid, setDefSubid]     = useState<string>('');
   const [platformInput, setPlatformInput] = useState('');
-  const [showAdvanced, setShowAdvanced]   = useState(false); // só para dica textual
+  const [showAdvanced, setShowAdvanced]   = useState(false);
 
-  // carrega do backend (formato novo ou legado é normalizado no backend)
+  // -------- helpers de fetch com erro legível ----------
+  async function getJsonOrText(r: Response) {
+    const txt = await r.text();
+    try { return JSON.parse(txt); } catch { return { error: txt || `${r.status} ${r.statusText}` }; }
+  }
+
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
         const r = await fetch(SUBIDS_API, { cache: 'no-store' });
-        const j = await r.json();
-        const payload = (j?.subids || {}) as SubidsPayload;
+        const data = await getJsonOrText(r);
+        if (!r.ok || data?.error) throw new Error(data?.error || `GET ${SUBIDS_API} -> ${r.status}`);
+        const payload = (data?.subids || {}) as SubidsPayload;
 
-        // garante todas as chaves conhecidas, mas não exibe placeholder nenhum
-        const filled: Partial<Record<KnownPlatform,string>> = { ...(payload.by_platform || {}) };
-        KNOWN.forEach(k => { if (filled[k] === undefined) filled[k] = ''; });
-        setByPlatform(filled);
+        // só mostra as plataformas que já existem (não lota a tela de vazio)
+        const current: Partial<Record<KnownPlatform,string>> = {};
+        if (payload.by_platform && typeof payload.by_platform === 'object') {
+          Object.entries(payload.by_platform).forEach(([k,v]) => {
+            const norm = normalizePlatform(k);
+            if (norm) current[norm] = String(v || '');
+          });
+        }
+        setByPlatform(current);
         setDefSubid(payload.default || '');
         setError(null);
-      } catch (e: any) {
+      } catch (e:any) {
         setError(e?.message || 'Falha ao carregar SubIDs');
       } finally {
         setLoading(false);
@@ -404,21 +414,19 @@ function ShopeeSubIdsCard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const j = await r.json();
-      if (!r.ok || j?.error) {
-        setError(j?.error || 'Falha ao salvar SubIDs');
-        toast(j?.error || 'Falha ao salvar SubIDs');
-      } else {
-        setError(null);
-        toast('SubIDs salvos!');
-      }
-    } catch (e: any) {
-      setError(e?.message || 'Erro ao salvar');
-      toast(e?.message || 'Erro ao salvar');
+      const data = await getJsonOrText(r);
+      if (!r.ok || data?.error) throw new Error(data?.error || `PUT ${SUBIDS_API} -> ${r.status}`);
+      setError(null);
+      toast('SubIDs salvos!');
+    } catch (e:any) {
+      setError(e?.message || 'Erro ao salvar SubIDs');
+      toast(e?.message || 'Erro ao salvar SubIDs');
     } finally {
       setSaving(false);
     }
   }
+
+  const platformsCount = Object.keys(byPlatform).length;
 
   return (
     <Card>
@@ -432,9 +440,7 @@ function ShopeeSubIdsCard() {
               Carregando…
             </div>
           ) : (
-            <span className="text-xs text-[#6B7280]">
-              {Object.keys(byPlatform).length} plataformas
-            </span>
+            <span className="text-xs text-[#6B7280]">{platformsCount} plataformas</span>
           )
         }
       />
@@ -451,6 +457,9 @@ function ShopeeSubIdsCard() {
         </div>
 
         {/* Cards por plataforma */}
+        {platformsCount === 0 ? (
+          <p className="text-sm text-[#6B7280] mb-3">Nenhuma plataforma adicionada ainda.</p>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-2">
           {Object.entries(byPlatform).map(([k, val]) => {
             const key = k as KnownPlatform;
