@@ -12,16 +12,14 @@ const N8N_PUBLISH_URL =
   process.env.N8N_PUBLISH_WEBHOOK_URL ||
   'https://n8n.seureview.com.br/webhook/social';
 
-// --- Supabase admin client (sem DATABASE_URL) ---
+// --- Supabase admin client ---
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
 
 function supabaseAdmin() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error(
-      'SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórias no ambiente.'
-    );
+    throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórias.');
   }
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
@@ -78,7 +76,7 @@ function ensureSafeProduct(baseUrl: string, p?: Partial<Product> | null): Produc
   };
 }
 
-// ✅ corrigido: sem `updated_at`
+// ✅ sem updated_at e sem id
 async function getLatestMetaIntegrationByUser(userId: string) {
   const sb = supabaseAdmin();
 
@@ -101,7 +99,6 @@ async function getLatestMetaIntegrationByUser(userId: string) {
     .eq('user_id', userId)
     .eq('provider', 'meta')
     .order('obtained_at', { ascending: false, nullsFirst: false })
-    .order('id', { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -187,17 +184,21 @@ export async function POST(req: NextRequest) {
     }
 
     const payloadForN8n = {
+      // Publicação direta (workflow n8n moderno)
       provider,
       caption,
       image_url,
       access_token,
       ig_business_id: provider === 'instagram' ? ig_business_id : null,
       fb_page_id: provider === 'meta' ? fb_page_id : null,
+
+      // Compat com workflow antigo
       platform,
       platform_subid: platform,
       link: trackedUrl,
       product,
       scheduleTime: scheduleTime || null,
+
       context: {
         source: 'composer',
         ts: new Date().toISOString(),
