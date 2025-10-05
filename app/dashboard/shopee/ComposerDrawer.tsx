@@ -131,19 +131,19 @@ async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: P
   const safeProduct = ensureSafeProduct(baseUrl, product);
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({ base_url: baseUrl, platform, product: safeProduct }),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || j.error) throw new Error(j.error || 'Falha ao montar SubIDs');
-  return { url: (j.url as string) || '' };
+  if (!r.ok || (j as any).error) throw new Error((j as any).error || 'Falha ao montar SubIDs');
+  return { url: ((j as any).url as string) || '' };
 }
 
 /** Gera legenda (n8n /webhook/caption via /api/caption) */
 async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payload: any) {
   const r = await fetch('/api/caption', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain;q=0.9,*/*;q=0.8' },
     body: JSON.stringify({ kind, ...payload }),
   });
   let text = await r.text();
@@ -192,28 +192,33 @@ async function publishToSocial({
 
   const res = await fetch('/api/integrations/n8n/publish', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain;q=0.9,*/*;q=0.8' },
     body: JSON.stringify(payload),
   });
 
-  // Lê como texto primeiro para evitar AggregateError quando não for JSON
+  // Lê como texto primeiro para evitar AggregateError quando a resposta não é JSON
   const raw = await res.text();
   let data: any = null;
   try {
     data = raw ? JSON.parse(raw) : null;
   } catch {
-    // mantém raw para mensagem de erro
+    // não é JSON — manteremos o raw para diagnóstico
   }
+
+  // Logs úteis para diagnosticar rapidamente no navegador
+  // (não quebra a UX, só ajuda a entender caso algo não seja JSON)
+  console.debug('[publishToSocial] status:', res.status, 'raw:', raw);
 
   if (!res.ok || (data && data.error)) {
     const msg =
       (data && (data.message || data.error)) ||
-      raw ||
+      (raw && raw.slice(0, 500)) ||
       `Falha (${res.status}) ao publicar nas redes sociais`;
     throw new Error(msg);
   }
 
-  return data || { ok: true };
+  // Se não veio JSON válido mas status é 2xx, consideramos OK.
+  return data || { ok: true, raw };
 }
 
 /* -------------------- componente -------------------- */
@@ -305,7 +310,13 @@ export default function ComposerDrawer({
     const safeProduct = ensureSafeProduct(product.url, product);
     const finalCaption = (caption || `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl}`).trim();
     try {
-      const resp = await publishToSocial({ platform, product: safeProduct, trackedUrl, caption: finalCaption, scheduleTime });
+      const resp = await publishToSocial({
+        platform,
+        product: safeProduct,
+        trackedUrl,
+        caption: finalCaption,
+        scheduleTime,
+      });
       console.log('publish response:', resp);
       alert(scheduleTime ? 'Publicação agendada com sucesso!' : 'Publicado com sucesso!');
       onClose();
