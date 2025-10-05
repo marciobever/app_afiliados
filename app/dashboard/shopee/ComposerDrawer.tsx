@@ -5,6 +5,12 @@ import { X as XIcon, Loader2, CalendarClock } from 'lucide-react';
 
 type PlatformKey = 'facebook' | 'instagram' | 'x';
 
+type SubProfile = {
+  key: string;         // ex: "mina", "receita", "trends"
+  label: string;       // ex: "Mina", "Receita", "Trends"
+  hint?: string;       // opcional para tooltip/descrição
+};
+
 function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
@@ -21,12 +27,25 @@ async function generateCaption(title: string, platform: PlatformKey) {
   return j.caption as string;
 }
 
-/** Cria link com SubIDs automáticos (n8n shopee_subids) */
-async function getTrackedUrl(baseUrl: string, platform: PlatformKey) {
+/** Busca a lista de perfis de SubIDs que o usuário configurou */
+async function fetchSubProfiles(): Promise<SubProfile[]> {
+  const r = await fetch('/api/subids/profiles', { method: 'GET', cache: 'no-store' });
+  const j = await r.json();
+  if (!r.ok || j.error) throw new Error(j.error || 'Falha ao carregar perfis de SubIDs');
+  return (j.profiles as SubProfile[]) || [];
+}
+
+/** Cria link com SubIDs com base no perfil escolhido */
+async function getTrackedUrl(baseUrl: string, platform: PlatformKey, subProfileKey: string, product: any) {
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ base_url: baseUrl, platform }),
+    body: JSON.stringify({
+      base_url: baseUrl,
+      platform,
+      sub_profile: subProfileKey, // <<< PERFIL ESCOLHIDO
+      product,                    // opcional: útil p/ montar sub3=sub_item etc
+    }),
   });
   const j = await r.json();
   if (!r.ok || j.error) throw new Error(j.error || 'Falha ao montar SubIDs');
@@ -50,40 +69,77 @@ export default function ComposerDrawer({
   };
 }) {
   const [platform, setPlatform] = React.useState<PlatformKey>('facebook');
-  const [trackedUrl, setTrackedUrl] = React.useState('');
   const [caption, setCaption] = React.useState('');
+  const [trackedUrl, setTrackedUrl] = React.useState('');
   const [subidsUsed, setSubidsUsed] = React.useState<string[]>([]);
+  const [profiles, setProfiles] = React.useState<SubProfile[]>([]);
+  const [activeProfile, setActiveProfile] = React.useState<string>(''); // key selecionada
   const [loading, setLoading] = React.useState(false);
+  const [linkLoading, setLinkLoading] = React.useState<string>(''); // key em carregamento
 
-  // Gera link + legenda automaticamente ao abrir ou trocar plataforma
+  // 1) Carrega perfis + gera caption (link só quando clicar numa Sub)
   React.useEffect(() => {
+    if (!open || !product) return;
+    let cancel = false;
+
     async function init() {
-      if (!product) return;
       setLoading(true);
       try {
-        const [{ url, subids }, generated] = await Promise.all([
-          getTrackedUrl(product.url, platform),
+        const [pf, cap] = await Promise.all([
+          fetchSubProfiles(),
           generateCaption(product.title, platform),
         ]);
-        setTrackedUrl(url);
-        setSubidsUsed(subids);
-        setCaption(generated.replace('{link}', url));
-      } catch {
-        // fallback simples
-        setTrackedUrl(product.url);
-        setCaption(`${product.title}\n\nConfira aqui 👉 ${product.url}`);
+        if (cancel) return;
+
+        setProfiles(pf);
+        setCaption(cap.replace('{link}', '')); // sem link por enquanto
+        setTrackedUrl('');
+        setSubidsUsed([]);
+        setActiveProfile(''); // ainda não escolhido
+      } catch (e) {
+        // fallback
+        setCaption(`${product.title}\n\nConfira aqui 👉 `);
       } finally {
-        setLoading(false);
+        if (!cancel) setLoading(false);
       }
     }
-    if (open && product) init();
+
+    init();
+    return () => { cancel = true; };
   }, [open, product, platform]);
+
+  // 2) Ao escolher um perfil, gera o link
+  async function pickProfile(key: string) {
+    if (!product) return;
+    setActiveProfile(key);
+    setLinkLoading(key);
+    try {
+      const { url, subids } = await getTrackedUrl(product.url, platform, key, product);
+      setTrackedUrl(url);
+      setSubidsUsed(subids);
+      // injeta o link na legenda, preservando edição manual
+      setCaption(prev => {
+        if (!prev) return `${product.title}\n\nConfira aqui 👉 ${url}`;
+        // se já tem um {link}, substitui; se não, tenta anexar
+        if (prev.includes('{link}')) return prev.replace(/\{link\}/g, url);
+        if (prev.trim().endsWith('👉')) return `${prev} ${url}`;
+        return prev.includes('http') ? prev : `${prev}\n\n${url}`;
+      });
+    } catch (e: any) {
+      alert(e?.message || 'Erro ao gerar link para o perfil');
+    } finally {
+      setLinkLoading('');
+    }
+  }
 
   async function publishNow(scheduleTime?: string) {
     if (!product) return;
-    const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url);
+    if (!trackedUrl) {
+      alert('Escolha uma Sub primeiro para gerar o link rastreado.');
+      return;
+    }
+    const finalCaption = caption.replace(/\{link\}/g, trackedUrl);
 
-    // normaliza agendamento para ISO (ou não envia)
     let iso: string | null = null;
     if (scheduleTime) {
       const d = new Date(scheduleTime);
@@ -104,6 +160,7 @@ export default function ComposerDrawer({
         subidsUsed,
         caption: finalCaption,
         scheduleTime: iso,
+        sub_profile: activeProfile || null,
       }),
     });
 
@@ -122,17 +179,11 @@ export default function ComposerDrawer({
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* backdrop */}
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      {/* panel */}
-      <aside className="absolute right-0 top-0 h-full w-full sm:w-[520px] bg-white border-l shadow-xl flex flex-col">
+      <aside className="absolute right-0 top-0 h-full w-full sm:w-[560px] bg-white border-l shadow-xl flex flex-col">
         <div className="p-4 border-b flex items-center justify-between">
           <div className="font-semibold">Composer</div>
-          <button
-            className="p-2 rounded hover:bg-[#FFF4F0]"
-            aria-label="Fechar"
-            onClick={onClose}
-          >
+          <button className="p-2 rounded hover:bg-[#FFF4F0]" onClick={onClose}>
             <XIcon className="w-5 h-5" />
           </button>
         </div>
@@ -148,7 +199,7 @@ export default function ComposerDrawer({
             </div>
           </div>
 
-          {/* Plataforma (clicar já refaz SubIDs + legenda) */}
+          {/* Plataforma */}
           <div>
             <label className="text-sm font-medium text-[#374151]">Plataforma</label>
             <div className="mt-2 flex gap-2">
@@ -168,18 +219,57 @@ export default function ComposerDrawer({
               ))}
             </div>
             <p className="text-xs text-[#6B7280] mt-1">
-              Ao trocar a plataforma, o link rastreado e a legenda são atualizados automaticamente.
+              Escolha uma Sub abaixo para gerar o link rastreado desta plataforma.
             </p>
           </div>
 
-          {/* Link (somente leitura, sem barra de ações) */}
+          {/* Subs (perfis) */}
+          <div>
+            <label className="text-sm font-medium text-[#374151]">Subs (Perfis)</label>
+            {loading ? (
+              <div className="mt-2 text-sm text-[#6B7280] flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Carregando perfis…
+              </div>
+            ) : profiles.length ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {profiles.map((pf) => (
+                  <button
+                    key={pf.key}
+                    onClick={() => pickProfile(pf.key)}
+                    className={cx(
+                      'px-3 py-1.5 rounded-lg border text-sm',
+                      activeProfile === pf.key
+                        ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]'
+                        : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
+                    )}
+                    title={pf.hint || ''}
+                    disabled={!!linkLoading && linkLoading !== pf.key}
+                  >
+                    {linkLoading === pf.key ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" /> {pf.label}
+                      </span>
+                    ) : (
+                      pf.label
+                    )}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 text-sm text-[#6B7280]">
+                Nenhuma Sub encontrada. Cadastre no painel de SubIDs.
+              </p>
+            )}
+          </div>
+
+          {/* Link gerado */}
           <div>
             <label className="text-sm font-medium text-[#374151]">Link rastreado</label>
             <input
               className="mt-1 w-full border border-[#FFD9CF] rounded px-3 py-2 text-sm"
               value={trackedUrl}
               readOnly
-              placeholder={loading ? 'Gerando…' : ''}
+              placeholder="Clique numa Sub para gerar"
             />
             {!!subidsUsed.length && (
               <p className="mt-1 text-xs text-[#6B7280]">
@@ -210,15 +300,14 @@ export default function ComposerDrawer({
           </button>
           <button
             className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
-            disabled={loading || !trackedUrl || !caption}
+            disabled={!trackedUrl || !caption}
             onClick={() => publishNow()}
           >
-            {loading && <Loader2 className="animate-spin w-4 h-4" />}
             Publicar
           </button>
           <button
             className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
-            disabled={loading || !trackedUrl || !caption}
+            disabled={!trackedUrl || !caption}
             onClick={() => {
               const when = prompt('Agendar (ex: 2025-10-05T18:00:00-03:00):');
               if (when) publishNow(when);
