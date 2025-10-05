@@ -32,6 +32,7 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
     <button
       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0] text-sm disabled:opacity-50"
       onClick={async () => {
+        if (!text) return;
         await navigator.clipboard.writeText(text || '');
         setOk(true);
         setTimeout(() => setOk(false), 1200);
@@ -44,45 +45,62 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
   );
 }
 
-/** 🔹 Gera legenda automática via n8n (/api/caption → /webhook/caption) */
+/** 🔹 IA de legendas por plataforma */
 async function generateCaption(title: string, platform: PlatformKey) {
+  // usa o proxy já existente /api/caption → n8n (que decide o prompt/estilo)
+  const kind =
+    platform === 'instagram' ? 'instagram_caption'
+    : platform === 'facebook' ? 'facebook_caption'
+    : 'facebook_caption';
+
   const r = await fetch('/api/caption', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, platform }),
+    body: JSON.stringify({ kind, products: [{ title }], style: 'Default' }),
   });
+
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || j.error) throw new Error(j.error || 'Falha ao gerar legenda');
-  // aceita vários formatos comuns do n8n
-  return j.caption || j.text || j.output || '';
+  if (!r.ok || j?.error) {
+    // fallback: tenta o endpoint Gemini se existir
+    const r2 = await fetch('/api/ai/gemini-caption', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, platform }),
+    });
+    const j2 = await r2.json().catch(() => ({}));
+    if (!r2.ok || j2?.error) throw new Error(j?.error || j2?.error || 'Falha ao gerar legenda');
+    return (j2.caption as string) || '';
+  }
+  // /api/caption pode devolver { caption } ou um objeto com variants
+  const caption =
+    j?.caption ??
+    j?.data?.caption ??
+    j?.result?.caption ??
+    (Array.isArray(j?.variants) ? j.variants[0] : '') ??
+    '';
+  return String(caption || '');
 }
 
-/** 🔹 Gera link rastreável (via webhook n8n de SubIDs) */
-async function getTrackedUrl(
-  baseUrl: string,
-  platform: PlatformKey,
-  profile: string | undefined,
-  product: Product | undefined
-) {
+/** 🔹 Link rastreável (webhook n8n de SubIDs) */
+async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product: Product) {
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       base_url: baseUrl,
       platform,
-      sub_profile: profile ?? '',
-      product, // importante p/ Node 6 montar subids (id/item_id etc.)
+      product, // importante p/ montar subIds com item_id etc.
     }),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || j.error) throw new Error(j.error || 'Falha ao montar SubIDs');
+  if (!r.ok || j?.error) throw new Error(j?.error || 'Falha ao montar SubIDs');
   return {
     url: (j.url as string) || '',
     subids: (j.subids_used as string[]) || [],
   };
 }
 
-/** 🔹 Publica nas redes (via webhook n8n /webhook/social) */
+/** 🔹 Publica nas redes (webhook n8n /webhook/social via proxy) */
 async function publishToSocial({
   platform,
   product,
@@ -121,57 +139,59 @@ export default function ComposerDrawer({
   product: Product | null;
 }) {
   const [platform, setPlatform] = React.useState<PlatformKey>('facebook');
-  const [profile, setProfile] = React.useState<string>('padrão');
   const [trackedUrl, setTrackedUrl] = React.useState('');
-  const [caption, setCaption] = React.useState('');
   const [subidsUsed, setSubidsUsed] = React.useState<string[]>([]);
+  const [caption, setCaption] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [errMsg, setErrMsg] = React.useState<string | null>(null);
 
-  // Reseta campos quando muda plataforma/perfil
+  // Sempre que abrir ou trocar plataforma/produto, recarrega link + legenda
   React.useEffect(() => {
-    if (!open) return;
-    setTrackedUrl('');
-    setSubidsUsed([]);
-    setCaption('');
-    setErrMsg(null);
-  }, [open, platform, profile]);
+    if (!open || !product) return;
 
-  // Carrega link (SubIDs) + legenda sempre que mudar plataforma/perfil/produto
-  React.useEffect(() => {
-    async function init() {
-      if (!product || !open) return;
+    let cancelled = false;
+    async function load() {
       setLoading(true);
       setErrMsg(null);
+      setTrackedUrl('');
+      setSubidsUsed([]);
+      setCaption('');
+
       try {
         const [{ url, subids }, generated] = await Promise.all([
-          getTrackedUrl(product.url, platform, profile, product),
+          getTrackedUrl(product.url, platform, product),
           generateCaption(product.title, platform),
         ]);
-        const finalUrl = url || product.url;
-        const finalCaption = (generated || '').replace('{link}', finalUrl);
-        setTrackedUrl(finalUrl);
+        if (cancelled) return;
+
+        const finalCaption = (generated || '').replace('{link}', url || product.url);
+        setTrackedUrl(url);
         setSubidsUsed(subids);
-        setCaption(finalCaption || `${product.title}\n\nConfira aqui 👉 ${finalUrl}`);
+        setCaption(finalCaption || `${product.title}\n\nConfira aqui 👉 ${url || product.url}`);
       } catch (e: any) {
+        if (cancelled) return;
         setTrackedUrl('');
         setSubidsUsed([]);
         setCaption(`${product.title}\n\nConfira aqui 👉 ${product.url}`);
         setErrMsg(e?.message || 'Falha ao preparar link/legenda');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    init();
-  }, [open, product, platform, profile]);
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, product, platform]);
 
   async function publishNow(scheduleTime?: string) {
     if (!product) return;
-    const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url).trim();
     if (!trackedUrl) {
-      alert('Link rastreável ainda não foi gerado. Aguarde e tente novamente.');
+      alert('Aguarde gerar o link rastreável antes de publicar.');
       return;
     }
+    const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url).trim();
+
     setLoading(true);
     setErrMsg(null);
     try {
@@ -216,7 +236,7 @@ export default function ComposerDrawer({
             </div>
           </div>
 
-          {/* Erro (se houver) */}
+          {/* Erro */}
           {errMsg && (
             <div className="p-2 text-sm rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
               {errMsg}
@@ -242,24 +262,12 @@ export default function ComposerDrawer({
                 </button>
               ))}
             </div>
+            <p className="text-xs text-[#6B7280] mt-1">
+              Ao trocar a plataforma, o link com SubIDs e a legenda são gerados automaticamente.
+            </p>
           </div>
 
-          {/* Perfil de SubIDs */}
-          <div>
-            <label className="text-sm font-medium text-[#374151]">Perfil de SubIDs</label>
-            <select
-              value={profile}
-              onChange={(e) => setProfile(e.target.value)}
-              className="mt-1 border border-[#FFD9CF] rounded-lg px-3 py-2 w-full text-sm"
-            >
-              <option value="padrão">Padrão</option>
-              <option value="facebook_ads">Facebook Ads</option>
-              <option value="instagram_organico">Instagram Orgânico</option>
-              <option value="influencer">Influencer</option>
-            </select>
-          </div>
-
-          {/* Link rastreável (montado automaticamente) */}
+          {/* Link rastreável */}
           <div>
             <label className="text-sm font-medium text-[#374151]">Link com SubIDs</label>
             <div className="mt-1 flex gap-2">
