@@ -1,52 +1,131 @@
+/* Tailwind base */
 @import "tailwindcss";
 
-/* Preferências gerais */
-:root { color-scheme: light; }
-html, body { height: 100%; }
-body { margin: 0; }
-
-/* Links do header */
-.nav-link {
-  @apply text-gray-700 hover:text-gray-900;
+/* ---------- Reset & base ---------- */
+:root {
+  color-scheme: light;
+  --color-primary: #EE4D2D;
+  --color-primary-hover: #D8431F;
+  --color-bg: #ffffff;
+  --color-text: #111827;
 }
 
-/* Botões padrão */
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, "Inter", "Segoe UI", Roboto, sans-serif;
+  scroll-behavior: smooth;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ---------- Tipografia ---------- */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+p {
+  color: #374151;
+  line-height: 1.6;
+}
+
+/* ---------- Navbar ---------- */
+.nav-item {
+  @apply px-3 py-2 rounded-md text-gray-700 hover:text-gray-900 hover:bg-gray-50 transition;
+}
+
+/* ---------- Botões ---------- */
 .btn {
-  @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm transition;
+  @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition focus:outline-none;
 }
+
 .btn-primary {
-  @apply bg-[#EE4D2D] text-white hover:bg-[#D8431F];
+  background: var(--color-primary);
+  color: #fff;
 }
+
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+}
+
 .btn-ghost {
-  @apply border border-gray-200 hover:bg-gray-50;
-}
-.btn-dark {
-  @apply bg-gray-900 text-white hover:bg-gray-800;
-}
-.btn-light {
-  @apply bg-white text-gray-900 border border-gray-200 hover:bg-gray-50;
+  @apply border border-gray-200 text-gray-800 bg-white hover:bg-gray-50;
 }
 
-/* Inputs e selects coerentes no site todo */
-.input {
-  @apply w-full rounded-lg border border-gray-200 bg-white text-gray-900 placeholder-gray-500 px-3 py-2 outline-none focus:ring-2 focus:ring-[#FFD9CF] focus:border-[#EE4D2D];
-}
-.select {
-  @apply w-full rounded-lg border border-gray-200 bg-white text-gray-900 px-3 py-2 outline-none focus:ring-2 focus:ring-[#FFD9CF] focus:border-[#EE4D2D];
-}
-.textarea {
-  @apply w-full rounded-lg border border-gray-200 bg-white text-gray-900 placeholder-gray-500 p-3 outline-none focus:ring-2 focus:ring-[#FFD9CF] focus:border-[#EE4D2D];
+.btn-ghost:disabled,
+.btn-primary:disabled {
+  @apply opacity-60 cursor-not-allowed;
 }
 
-/* Cards reutilizáveis */
+/* ---------- Cards, Chips, Badges ---------- */
 .card {
-  @apply rounded-2xl border border-gray-200 bg-white shadow-sm;
+  @apply rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md;
 }
+
 .card-body {
   @apply p-5;
 }
 
-/* Badges */
 .badge {
-  @apply inline-flex items-center rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600;
+  @apply inline-flex items-center rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 bg-white;
+}
+
+.chip {
+  @apply rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-gray-600 text-xs;
+}
+
+/* ---------- Inputs ---------- */
+input, select, textarea {
+  @apply border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)];
+  background-color: #fff;
+}
+
+/* ---------- Scrollbar suave ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* ---------- Utilidades extras ---------- */
+.section {
+  @apply py-16 md:py-24;
+}
+
+.max-container {
+  @apply mx-auto max-w-7xl px-4;
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, var(--color-primary), #ff8f70);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---------- Footer ---------- */
+footer {
+  background-color: #fff;
+}
+
+footer a:hover {
+  color: var(--color-primary-hover);
 }
