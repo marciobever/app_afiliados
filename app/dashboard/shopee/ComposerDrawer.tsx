@@ -1,12 +1,7 @@
 'use client';
 
 import React from 'react';
-import {
-  X as XIcon,
-  Loader2,
-  CalendarClock,
-  Globe2,
-} from 'lucide-react';
+import { X as XIcon, Loader2, CalendarClock, Globe2, Copy } from 'lucide-react';
 
 type PlatformKey = 'facebook' | 'instagram' | 'x';
 
@@ -23,87 +18,112 @@ function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
 
-/* --------- helpers --------- */
+/* ---------------- caption builders ---------------- */
 
-/** Monta a legenda quando o n8n devolve { variants: [...] } (payload que você mostrou) */
-function buildCaptionFromVariants(variants: any[], platform: PlatformKey) {
-  if (!Array.isArray(variants) || variants.length === 0) return '';
-  const v = variants[0] || {};
-  const hook = (v.hook || '').toString().trim();
-  const body = (v.body || '').toString().trim();
-  const ctas = Array.isArray(v.cta_lines) ? v.cta_lines.map((l: any) => (l || '').toString().trim()).filter(Boolean) : [];
-  const hashtags = Array.isArray(v.hashtags) ? v.hashtags.map((h: any) => (h || '').toString().trim()).filter(Boolean) : [];
-
-  const blocks = [
+function buildInstagramCaptionFromVariant(v: any) {
+  const hook = (v?.hook ?? '').toString().trim();
+  const body = (v?.body ?? '').toString().trim();
+  const ctas = Array.isArray(v?.cta_lines) ? v.cta_lines.filter(Boolean) : [];
+  const hashtags = Array.isArray(v?.hashtags) ? v.hashtags.filter(Boolean) : [];
+  const parts = [
     hook,
     body,
-    ctas.join('\n'),
+    ctas.map((l: string) => `• ${l}`).join('\n'),
     hashtags.join(' '),
   ].filter(Boolean);
-
-  let txt = blocks.join('\n\n').trim();
-
-  // Para Facebook, geralmente queremos o link explícito no corpo.
-  // Se o modelo vier sem {link}, deixamos o publish() injetar no fim.
-  // Se vier com {link}, será substituído lá.
-  if (platform === 'facebook' && !/\{link\}/i.test(txt)) {
-    txt = `${txt}\n\n{link}`;
-  }
-
-  return txt;
+  return parts.join('\n\n').trim();
 }
 
-/** IA de legendas por plataforma via /api/caption (fallback /api/ai/gemini-caption) */
-async function generateCaption(title: string, platform: PlatformKey) {
+function buildFacebookCaptionFromVariant(v: any) {
+  const title = (v?.title ?? '').toString().trim();
+  const intro = (v?.intro ?? '').toString().trim();
+  const bullets = Array.isArray(v?.bullets) ? v.bullets.filter(Boolean) : [];
+  const cta = (v?.cta ?? '').toString().trim();
+  const hashtags = Array.isArray(v?.hashtags) ? v.hashtags.filter(Boolean) : [];
+  const parts = [
+    title,
+    intro,
+    bullets.map((b: string) => `• ${b}`).join('\n'),
+    cta,
+    hashtags.join(' '),
+  ].filter(Boolean);
+  return parts.join('\n\n').trim();
+}
+
+/* ---------------- API helpers ---------------- */
+
+async function fetchCaption({
+  platform,
+  productTitle,
+  keyword = 'oferta',
+}: {
+  platform: PlatformKey;
+  productTitle: string;
+  keyword?: string;
+}) {
   const kind =
-    platform === 'instagram' ? 'instagram_caption'
-    : platform === 'facebook' ? 'facebook_caption'
-    : 'facebook_caption';
+    platform === 'instagram'
+      ? 'instagram_caption'
+      : platform === 'facebook'
+      ? 'facebook_caption'
+      : 'instagram_caption';
 
-  const r = await fetch('/api/caption', {
+  const res = await fetch('/api/caption', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    // products só precisa de título; o n8n já sabe montar CTA por plataforma
-    body: JSON.stringify({ kind, products: [{ title }], style: 'Default', keyword: 'oferta' }),
+    body: JSON.stringify({
+      kind,
+      // o n8n aceita lista de products; passamos um mínimo
+      products: [{ title: productTitle }],
+      keyword, // usado no IG
+    }),
   });
 
-  const j = await r.json().catch(() => ({}));
-  if (r.ok && !j?.error) {
-    // pode vir { caption } OU { variants: [...] }
-    if (j?.caption) return String(j.caption || '');
-    const variants = Array.isArray(j?.variants) ? j.variants : Array.isArray(j?.[0]?.variants) ? j[0].variants : null;
-    if (variants) return buildCaptionFromVariants(variants, platform);
+  const data = await res.json();
+  if (!res.ok || data?.error) {
+    throw new Error(data?.message || data?.error || 'Falha ao gerar legenda');
   }
 
-  // fallback gemini
-  const r2 = await fetch('/api/ai/gemini-caption', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, platform }),
-  });
-  const j2 = await r2.json().catch(() => ({}));
-  if (!r2.ok || j2?.error) throw new Error(j?.error || j2?.error || 'Falha ao gerar legenda');
-  return String(j2.caption || '');
+  // o seu n8n retorna algo como { variants: [...] } (às vezes encapsulado)
+  const variants = Array.isArray(data?.variants)
+    ? data.variants
+    : Array.isArray(data?.[0]?.variants)
+    ? data[0].variants
+    : [];
+
+  if (!variants.length) return '';
+
+  if (platform === 'facebook') {
+    return buildFacebookCaptionFromVariant(variants[0]);
+  }
+  return buildInstagramCaptionFromVariant(variants[0]);
 }
 
-/** Link rastreável (n8n /webhook/shopee_subids via proxy) — não exibimos mais na UI */
-async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product: Product) {
+async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: Product) {
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       base_url: baseUrl,
       platform,
-      product, // importante para montar subIds (item_id etc.)
+      product, // útil para o node 6 montar subids
     }),
   });
-  const j = await r.json().catch(() => ({}));
+  const j = await r.json();
   if (!r.ok || j?.error) throw new Error(j?.error || 'Falha ao montar SubIDs');
-  return (j.url as string) || '';
+  return {
+    url: (j.url as string) || '',
+    subids: (j.subids_used as string[]) || [],
+  };
 }
 
-/** Publica nas redes (n8n /webhook/social via proxy) */
-async function publishToSocial(args: {
+async function publishToSocial({
+  platform,
+  product,
+  trackedUrl,
+  caption,
+  scheduleTime,
+}: {
   platform: PlatformKey;
   product: Product;
   trackedUrl: string;
@@ -113,13 +133,19 @@ async function publishToSocial(args: {
   const r = await fetch('/api/integrations/n8n/social', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...args, scheduleTime: args.scheduleTime ?? null }),
+    body: JSON.stringify({
+      platform,
+      product,
+      trackedUrl,
+      caption,
+      scheduleTime: scheduleTime || null,
+    }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j?.error) throw new Error(j?.error || 'Falha ao publicar nas redes sociais');
 }
 
-/* --------- componente --------- */
+/* ---------------- Component ---------------- */
 
 export default function ComposerDrawer({
   open,
@@ -131,68 +157,61 @@ export default function ComposerDrawer({
   product: Product | null;
 }) {
   const [platform, setPlatform] = React.useState<PlatformKey>('facebook');
+  const [trackedUrl, setTrackedUrl] = React.useState('');
   const [caption, setCaption] = React.useState('');
-  const [trackedUrl, setTrackedUrl] = React.useState(''); // interno
+  const [subidsUsed, setSubidsUsed] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [errMsg, setErrMsg] = React.useState<string | null>(null);
 
-  // Recarrega tudo sempre que abrir / trocar plataforma / trocar produto
+  // reset ao mudar plataforma ou abrir
   React.useEffect(() => {
-    if (!open || !product) return;
+    if (!open) return;
+    setTrackedUrl('');
+    setCaption('');
+    setSubidsUsed([]);
+    setErrMsg(null);
+  }, [open, platform]);
 
-    let cancel = false;
-    async function load() {
-      setLoading(true);
-      setErrMsg(null);
-      setCaption('');
-      setTrackedUrl('');
-
-      try {
-        const [url, cap] = await Promise.all([
-          getTrackedUrl(product.url, platform, product),
-          generateCaption(product.title, platform),
-        ]);
-        if (cancel) return;
-
-        setTrackedUrl(url || '');
-        // injeta {link} se houver; caso contrário, se a plataforma for Facebook,
-        // adiciona o link no final na hora do publish.
-        const ready = (cap || '').replace(/\{link\}/gi, url || product.url);
-        setCaption(ready || `${product.title}\n\nConfira aqui 👉 ${url || product.url}`);
-      } catch (e: any) {
-        if (cancel) return;
-        setErrMsg(e?.message || 'Falha ao preparar link/legenda');
-        // fallback mínimo
-        setCaption(`${product.title}\n\nConfira aqui 👉 ${product.url}`);
-      } finally {
-        if (!cancel) setLoading(false);
-      }
-    }
-    load();
-
-    return () => {
-      cancel = true;
-    };
-  }, [open, product, platform]);
-
-  async function publishNow(scheduleTime?: string) {
+  async function generateAll() {
     if (!product) return;
-    // se a legenda ainda tiver {link}, substitui agora
-    let finalCaption = caption.replace(/\{link\}/gi, trackedUrl || product.url).trim();
-
-    // Para Facebook, se não há {link} na legenda, garante o link no final
-    if (platform === 'facebook' && !finalCaption.includes(trackedUrl)) {
-      finalCaption = `${finalCaption}\n\n${trackedUrl || product.url}`.trim();
-    }
-
     setLoading(true);
     setErrMsg(null);
     try {
-      await publishToSocial({ platform, product, trackedUrl: trackedUrl || product.url, caption: finalCaption, scheduleTime });
+      const [{ url, subids }, cap] = await Promise.all([
+        getTrackedUrl(product.url, platform, product),
+        fetchCaption({ platform, productTitle: product.title }),
+      ]);
+      const finalCap = cap?.includes('{link}')
+        ? cap.replace(/\{link\}/g, url || product.url)
+        : `${cap}\n\nConfira aqui 👉 ${url || product.url}`;
+      setTrackedUrl(url);
+      setSubidsUsed(subids);
+      setCaption(finalCap.trim());
+    } catch (e: any) {
+      setTrackedUrl('');
+      setSubidsUsed([]);
+      setCaption(`${product.title}\n\nConfira aqui 👉 ${product?.url ?? ''}`);
+      setErrMsg(e?.message || 'Falha ao gerar link/legenda');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function publishNow(scheduleTime?: string) {
+    if (!product) return;
+    if (!trackedUrl) {
+      setErrMsg('Gere o link + legenda antes de publicar.');
+      return;
+    }
+    setLoading(true);
+    setErrMsg(null);
+    try {
+      const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url).trim();
+      await publishToSocial({ platform, product, trackedUrl, caption: finalCaption, scheduleTime });
       alert(scheduleTime ? 'Publicação agendada com sucesso!' : 'Publicado com sucesso!');
       onClose();
-    } catch (err: any) {
-      setErrMsg(err?.message || 'Erro ao publicar nas redes sociais');
+    } catch (e: any) {
+      setErrMsg(e?.message || 'Erro ao publicar nas redes sociais');
     } finally {
       setLoading(false);
     }
@@ -200,7 +219,7 @@ export default function ComposerDrawer({
 
   if (!open || !product) return null;
 
-  const publishDisabled = loading || !caption;
+  const publishDisabled = loading || !trackedUrl;
 
   return (
     <div className="fixed inset-0 z-50">
@@ -229,50 +248,90 @@ export default function ComposerDrawer({
             </div>
           </div>
 
-          {/* Estado */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-[#374151]">Plataforma</span>
-            {loading && (
-              <span className="inline-flex items-center gap-1 text-xs text-[#6B7280]">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Gerando link e legenda…
-              </span>
-            )}
-          </div>
-
-          {/* Botões de plataforma */}
-          <div className="mt-1 flex gap-2">
-            {(['facebook', 'instagram', 'x'] as PlatformKey[]).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPlatform(p)}
-                className={cx(
-                  'px-3 py-1.5 rounded-lg border text-sm',
-                  platform === p
-                    ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]'
-                    : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
-                )}
-              >
-                {p === 'x' ? 'X (Twitter)' : p[0].toUpperCase() + p.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          {/* Erro */}
+          {/* Erro (se houver) */}
           {errMsg && (
             <div className="p-2 text-sm rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
               {errMsg}
             </div>
           )}
 
-          {/* Legenda (sempre editável) */}
+          {/* Plataforma */}
+          <div>
+            <label className="text-sm font-medium text-[#374151]">Plataforma</label>
+            <div className="mt-2 flex gap-2">
+              {(['facebook', 'instagram', 'x'] as PlatformKey[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPlatform(p)}
+                  className={cx(
+                    'px-3 py-1.5 rounded-lg border text-sm',
+                    platform === p
+                      ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]'
+                      : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
+                  )}
+                >
+                  {p === 'x' ? 'X (Twitter)' : p[0].toUpperCase() + p.slice(1)}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-[#6B7280] mt-1">
+              Clique em <b>Gerar link + legenda</b> para criar os SubIDs e a legenda desta plataforma.
+            </p>
+          </div>
+
+          {/* Ação de geração */}
+          <div>
+            <button
+              onClick={generateAll}
+              disabled={loading}
+              className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white disabled:opacity-60"
+            >
+              {loading ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Gerando…
+                </span>
+              ) : (
+                'Gerar link + legenda'
+              )}
+            </button>
+          </div>
+
+          {/* Link rastreável */}
+          <div>
+            <label className="text-sm font-medium text-[#374151]">Link com SubIDs</label>
+            <div className="mt-1 flex gap-2">
+              <input
+                className="w-full border border-[#FFD9CF] rounded px-3 py-2 text-sm"
+                value={trackedUrl || '—'}
+                readOnly
+              />
+              <button
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0] text-sm"
+                onClick={async () => {
+                  if (!trackedUrl) return;
+                  await navigator.clipboard.writeText(trackedUrl);
+                }}
+                disabled={!trackedUrl}
+              >
+                <Copy className="w-4 h-4" /> Copiar
+              </button>
+            </div>
+            {!!subidsUsed.length && (
+              <div className="mt-1 text-xs text-[#6B7280]">
+                Aplicados: {subidsUsed.join(' · ')}
+              </div>
+            )}
+          </div>
+
+          {/* Legenda */}
           <div>
             <label className="text-sm font-medium text-[#374151]">Legenda</label>
             <textarea
               className="mt-1 w-full border border-[#FFD9CF] rounded-lg p-2 text-sm"
-              rows={10}
+              rows={8}
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
-              placeholder={loading ? 'Gerando legenda…' : 'Escreva/edite sua legenda'}
+              placeholder="Clique em “Gerar link + legenda” para preencher automaticamente."
             />
           </div>
         </div>
@@ -282,23 +341,21 @@ export default function ComposerDrawer({
           <button
             className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]"
             onClick={onClose}
-            disabled={loading}
           >
             Cancelar
           </button>
           <button
-            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
+            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white disabled:opacity-60"
             disabled={publishDisabled}
             onClick={() => publishNow()}
           >
-            {loading && <Loader2 className="animate-spin w-4 h-4" />}
             Publicar
           </button>
           <button
-            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
+            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white disabled:opacity-60"
             disabled={publishDisabled}
             onClick={() => {
-              const when = prompt('Agendar para (ex: 2025-10-05T18:00:00Z):');
+              const when = prompt('Agendar (ex: 2025-10-05T18:00:00Z):');
               if (when) publishNow(when);
             }}
           >
