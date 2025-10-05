@@ -78,9 +78,10 @@ function ensureSafeProduct(baseUrl: string, p?: Partial<Product> | null): Produc
   };
 }
 
+// ✅ corrigido: sem `updated_at`
 async function getLatestMetaIntegrationByUser(userId: string) {
   const sb = supabaseAdmin();
-  // Pega a mais recente pela data (obtained_at/updated_at)
+
   const { data, error } = await sb
     .from('social_integrations')
     .select(
@@ -94,14 +95,13 @@ async function getLatestMetaIntegrationByUser(userId: string) {
       page_name,
       granted_scopes,
       obtained_at,
-      expires_in,
-      updated_at
+      expires_in
     `
     )
     .eq('user_id', userId)
     .eq('provider', 'meta')
     .order('obtained_at', { ascending: false, nullsFirst: false })
-    .order('updated_at', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -121,7 +121,6 @@ export async function POST(req: NextRequest) {
 
     const product = ensureSafeProduct(body?.product?.url || '', body.product);
 
-    // validações básicas do payload
     if (!platform || !['facebook', 'instagram', 'x'].includes(platform)) {
       return NextResponse.json(
         { error: 'invalid_platform', message: 'Use "facebook", "instagram" ou "x".' },
@@ -135,7 +134,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'missing_tracked_url' }, { status: 400 });
     }
 
-    // contexto do usuário logado (multi-tenant)
     let userId = '';
     let orgId = '';
     try {
@@ -150,7 +148,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // pega credenciais META dessa pessoa
     const integ = await getLatestMetaIntegrationByUser(userId);
     if (!integ) {
       return NextResponse.json(
@@ -166,11 +163,9 @@ export async function POST(req: NextRequest) {
     const ig_business_id: string | null = integ.instagram_business_id || null;
     const fb_page_id: string | null = integ.page_id || null;
 
-    // provider real para o n8n/Graph
     const provider = platform === 'instagram' ? 'instagram' : 'meta';
     const image_url: string | undefined = product.image || undefined;
 
-    // checagens finais por plataforma
     const missing: string[] = [];
     if (!access_token) missing.push('access_token');
     if (provider === 'instagram') {
@@ -191,31 +186,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // monta payload que seu workflow já aceita
     const payloadForN8n = {
-      // novo (Graph)
-      provider, // 'instagram' | 'meta'
+      provider,
       caption,
       image_url,
       access_token,
       ig_business_id: provider === 'instagram' ? ig_business_id : null,
       fb_page_id: provider === 'meta' ? fb_page_id : null,
-
-      // compat com o workflow atual
-      platform, // 'facebook' | 'instagram' | 'x'
+      platform,
       platform_subid: platform,
       link: trackedUrl,
-      product: {
-        id: product.id || deriveShopeeIdFromUrl(product.url),
-        title: product.title,
-        price: product.price,
-        rating: product.rating,
-        image: product.image,
-        url: product.url,
-      },
+      product,
       scheduleTime: scheduleTime || null,
-
-      // contexto para logs
       context: {
         source: 'composer',
         ts: new Date().toISOString(),
