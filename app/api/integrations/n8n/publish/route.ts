@@ -6,7 +6,7 @@ import { getUserContext } from '@/lib/auth'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// URL do webhook do n8n (pode ser configurada por env)
+// URL do webhook do n8n (configurável por env, com fallback)
 const N8N_PUBLISH_URL =
   process.env.N8N_PUBLISH_URL ||
   process.env.N8N_PUBLISH_WEBHOOK_URL ||
@@ -30,14 +30,13 @@ function getPool() {
   if (!g[key]) {
     g[key] = new Pool({
       connectionString: process.env.DATABASE_URL,
-      // ssl: { rejectUnauthorized: false }, // habilite se precisar (e o seu DB exigir)
+      // ssl: { rejectUnauthorized: false },
     })
   }
   return g[key] as Pool
 }
 const pool = getPool()
 
-// Busca a integração META (Facebook/Instagram) mais recente por user_id
 async function getMetaIntegrationByUser(userId: string) {
   const q = `
     SELECT
@@ -116,7 +115,7 @@ export async function POST(req: NextRequest) {
 
     const product = ensureSafeProduct(body?.product?.url || '', body.product)
 
-    // Validações básicas
+    // Validações
     if (!platform || !['facebook', 'instagram', 'x'].includes(platform)) {
       return NextResponse.json(
         { error: 'invalid_platform', message: 'Use "facebook", "instagram" ou "x".' },
@@ -130,7 +129,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'missing_tracked_url' }, { status: 400 })
     }
 
-    // Identifica usuário logado (para buscar credenciais)
+    // Usuário logado para buscar credenciais
     let userId = ''
     let orgId = ''
     try {
@@ -145,7 +144,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Busca integração META do usuário
+    // Integração META
     const integ = await getMetaIntegrationByUser(userId)
     if (!integ) {
       return NextResponse.json(
@@ -161,13 +160,11 @@ export async function POST(req: NextRequest) {
     const ig_business_id: string | null = integ.instagram_business_id || null
     const fb_page_id: string | null = integ.page_id || null
 
-    // Definição do provider para o n8n/Graph
-    // - instagram => usa IG Graph (precisa de ig_business_id + image_url)
-    // - meta      => Página FB (precisa de fb_page_id)
+    // Provider para o n8n/Graph
     const provider = platform === 'instagram' ? 'instagram' : 'meta'
     const image_url: string | undefined = product.image || undefined
 
-    // Checagens finais para evitar 400 no n8n
+    // Checagens para evitar 400 no n8n
     const missing: string[] = []
     if (!access_token) missing.push('access_token')
     if (provider === 'instagram') {
@@ -188,24 +185,21 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Payload para o n8n — inclui formato novo (Graph) e compat com seu workflow atual
+    // Payload para o n8n (compat + dados de Graph)
     const payloadForN8n: Record<string, any> = {
-      // ---- NOVO (publicação direta no Graph) ----
       provider,                 // 'instagram' | 'meta'
       caption,
-      image_url,                // IG exige imagem; FB aceita texto+link
+      image_url,                // IG exige imagem
       access_token,
       ig_business_id: provider === 'instagram' ? ig_business_id : null,
       fb_page_id: provider === 'meta' ? fb_page_id : null,
 
-      // ---- COMPAT com workflow atual ----
       platform,                 // 'facebook' | 'instagram' | 'x'
-      platform_subid: platform, // usado nos SubIDs/relatórios
-      link: trackedUrl,         // shortlink s.shopee
+      platform_subid: platform,
+      link: trackedUrl,
       product,
       scheduleTime: scheduleTime || null,
 
-      // ---- Contexto útil para logs ----
       context: {
         source: 'composer',
         ts: new Date().toISOString(),
@@ -216,17 +210,42 @@ export async function POST(req: NextRequest) {
       },
     }
 
-    // Chave opcional para autenticar no n8n (se configurado)
+    // Timeout de rede para o webhook (evita “pendurar”)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15000) // 15s
+
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
     if (process.env.N8N_SECRET) headers['x-api-key'] = process.env.N8N_SECRET
 
-    // Chamada ao webhook do n8n
-    const r = await fetch(N8N_PUBLISH_URL, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payloadForN8n),
-      cache: 'no-store',
-    })
+    let r: Response
+    try {
+      r = await fetch(N8N_PUBLISH_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payloadForN8n),
+        signal: controller.signal,
+        cache: 'no-store',
+      })
+    } catch (err: any) {
+      // Captura erros de rede (onde às vezes vem como AggregateError)
+      const agg =
+        (err?.errors && Array.isArray(err.errors) && err.errors.map((e: any) => e?.message).filter(Boolean)) ||
+        (err?.cause?.errors && Array.isArray(err.cause.errors) && err.cause.errors.map((e: any) => e?.message).filter(Boolean)) ||
+        []
+      return NextResponse.json(
+        {
+          error: 'n8n_fetch_failed',
+          name: err?.name || 'Error',
+          message: err?.message || String(err),
+          aggregate_messages: agg,
+          hint: 'Verifique DNS/IPv6/Firewall do servidor que roda o app para alcançar o n8n.',
+          target: N8N_PUBLISH_URL,
+        },
+        { status: 502 }
+      )
+    } finally {
+      clearTimeout(timeout)
+    }
 
     const text = await r.text()
     let data: any
@@ -237,14 +256,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (!r.ok) {
-      // Super transparente no erro para debugar no n8n
       return NextResponse.json(
         { error: `n8n responded ${r.status}`, data },
         { status: 502 }
       )
     }
 
-    // Normalmente: { "message": "Workflow was started" }
     return NextResponse.json(data, { status: 200 })
   } catch (e: any) {
     return NextResponse.json(
