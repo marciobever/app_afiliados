@@ -30,7 +30,7 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
   const [ok, setOk] = React.useState(false);
   return (
     <button
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0] text-sm"
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0] text-sm disabled:opacity-50"
       onClick={async () => {
         await navigator.clipboard.writeText(text || '');
         setOk(true);
@@ -44,16 +44,17 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
   );
 }
 
-/** 🔹 Gera legenda automática via Gemini */
+/** 🔹 Gera legenda automática via n8n (/api/caption → /webhook/caption) */
 async function generateCaption(title: string, platform: PlatformKey) {
-  const r = await fetch('/api/ai/gemini-caption', {
+  const r = await fetch('/api/caption', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, platform }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.error) throw new Error(j.error || 'Falha ao gerar legenda');
-  return (j.caption as string) || '';
+  // aceita vários formatos comuns do n8n
+  return j.caption || j.text || j.output || '';
 }
 
 /** 🔹 Gera link rastreável (via webhook n8n de SubIDs) */
@@ -70,7 +71,7 @@ async function getTrackedUrl(
       base_url: baseUrl,
       platform,
       sub_profile: profile ?? '',
-      product, // << importante pro Node 6 montar subids (itemId etc.)
+      product, // importante p/ Node 6 montar subids (id/item_id etc.)
     }),
   });
   const j = await r.json().catch(() => ({}));
@@ -127,7 +128,7 @@ export default function ComposerDrawer({
   const [loading, setLoading] = React.useState(false);
   const [errMsg, setErrMsg] = React.useState<string | null>(null);
 
-  // Reseta campos quando muda plataforma/perfil (evita link/legenda “velhos”)
+  // Reseta campos quando muda plataforma/perfil
   React.useEffect(() => {
     if (!open) return;
     setTrackedUrl('');
@@ -147,10 +148,11 @@ export default function ComposerDrawer({
           getTrackedUrl(product.url, platform, profile, product),
           generateCaption(product.title, platform),
         ]);
-        const finalCaption = (generated || '').replace('{link}', url || product.url);
-        setTrackedUrl(url);
+        const finalUrl = url || product.url;
+        const finalCaption = (generated || '').replace('{link}', finalUrl);
+        setTrackedUrl(finalUrl);
         setSubidsUsed(subids);
-        setCaption(finalCaption || `${product.title}\n\nConfira aqui 👉 ${url || product.url}`);
+        setCaption(finalCaption || `${product.title}\n\nConfira aqui 👉 ${finalUrl}`);
       } catch (e: any) {
         setTrackedUrl('');
         setSubidsUsed([]);
@@ -167,7 +169,7 @@ export default function ComposerDrawer({
     if (!product) return;
     const finalCaption = caption.replace(/\{link\}/g, trackedUrl || product.url).trim();
     if (!trackedUrl) {
-      alert('Link rastreável ainda não foi gerado. Aguarde um instante e tente novamente.');
+      alert('Link rastreável ainda não foi gerado. Aguarde e tente novamente.');
       return;
     }
     setLoading(true);
