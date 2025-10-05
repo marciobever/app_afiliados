@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Dependências primeiro (cache melhor)
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Código
 COPY . .
