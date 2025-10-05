@@ -1,75 +1,52 @@
 @import "tailwindcss";
 
-/* ------------ BASE RESET ------------ */
-:root {
-  color-scheme: light dark;
-  scroll-behavior: smooth;
+/* Preferências gerais */
+:root { color-scheme: light; }
+html, body { height: 100%; }
+body { margin: 0; }
+
+/* Links do header */
+.nav-link {
+  @apply text-gray-700 hover:text-gray-900;
 }
 
-html,
-body {
-  height: 100%;
-  margin: 0;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+/* Botões padrão */
+.btn {
+  @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm transition;
+}
+.btn-primary {
+  @apply bg-[#EE4D2D] text-white hover:bg-[#D8431F];
+}
+.btn-ghost {
+  @apply border border-gray-200 hover:bg-gray-50;
+}
+.btn-dark {
+  @apply bg-gray-900 text-white hover:bg-gray-800;
+}
+.btn-light {
+  @apply bg-white text-gray-900 border border-gray-200 hover:bg-gray-50;
 }
 
-body {
-  @apply transition-colors duration-300;
+/* Inputs e selects coerentes no site todo */
+.input {
+  @apply w-full rounded-lg border border-gray-200 bg-white text-gray-900 placeholder-gray-500 px-3 py-2 outline-none focus:ring-2 focus:ring-[#FFD9CF] focus:border-[#EE4D2D];
+}
+.select {
+  @apply w-full rounded-lg border border-gray-200 bg-white text-gray-900 px-3 py-2 outline-none focus:ring-2 focus:ring-[#FFD9CF] focus:border-[#EE4D2D];
+}
+.textarea {
+  @apply w-full rounded-lg border border-gray-200 bg-white text-gray-900 placeholder-gray-500 p-3 outline-none focus:ring-2 focus:ring-[#FFD9CF] focus:border-[#EE4D2D];
 }
 
-/* ------------ LINK & BUTTON STYLES ------------ */
-a,
-button {
-  @apply transition-all duration-200 ease-out;
+/* Cards reutilizáveis */
+.card {
+  @apply rounded-2xl border border-gray-200 bg-white shadow-sm;
+}
+.card-body {
+  @apply p-5;
 }
 
-/* Hover effect sutil com escala */
-a:hover,
-button:hover {
-  @apply scale-[1.02];
-}
-
-/* ------------ DARK MODE ------------ */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b0b0b;
-    --fg: #f3f4f6;
-    --accent: #EE4D2D;
-  }
-
-  body {
-    background-color: var(--bg);
-    color: var(--fg);
-  }
-
-  header,
-  footer {
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(10px);
-  }
-
-  a {
-    color: var(--fg);
-  }
-
-  a:hover {
-    color: var(--accent);
-  }
-}
-
-/* ------------ ANIMAÇÕES SUAVES ------------ */
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.fade-in {
-  animation: fade-in 0.6s ease-out both;
+/* Badges */
+.badge {
+  @apply inline-flex items-center rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600;
 }
