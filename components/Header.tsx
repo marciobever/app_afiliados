@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type Props = { initialLoggedIn?: boolean };
 
@@ -13,6 +13,36 @@ function cx(...a: Array<string | false | null | undefined>) {
 export default function Header({ initialLoggedIn = false }: Props) {
   const [open, setOpen] = useState(false);
   const [loggedIn, setLoggedIn] = useState(initialLoggedIn);
+
+  // 🔎 Detecta sessão no mount e mantém em sincronia
+  useEffect(() => {
+    let abort = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me', {
+          method: 'GET',
+          credentials: 'include',      // <-- envia cookies
+          cache: 'no-store',           // <-- evita cache
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!abort) setLoggedIn(Boolean(json?.ok));
+      } catch {
+        if (!abort) setLoggedIn(false);
+      }
+    })();
+    return () => { abort = true; };
+  }, []);
+
+  async function logout() {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',        // <-- IMPORTANTE para limpar cookie
+      });
+    } catch {}
+    // Redireciona; o middleware garante que /dashboard etc. fiquem bloqueados
+    window.location.href = '/login';
+  }
 
   const navPublic = [
     { href: '/#como-funciona', label: 'Como funciona' },
@@ -25,14 +55,6 @@ export default function Header({ initialLoggedIn = false }: Props) {
     { href: '/dashboard/shopee', label: 'Dashboard' },
     { href: '/dashboard/configuracoes', label: 'Configurações' },
   ];
-
-  async function logout() {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-    } catch {}
-    // Como o cookie é httpOnly, apenas redirecionamos:
-    window.location.href = '/';
-  }
 
   return (
     <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-[#FFD9CF]">
