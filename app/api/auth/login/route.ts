@@ -4,6 +4,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import bcrypt from "bcryptjs";
 import { createHash } from "crypto";
 import { createSessionCookie } from "@/lib/auth";
+import { getOrCreatePrimaryOrg } from "@/lib/orgs";
 
 /** UUID determinístico (usado só como fallback em dev/admin) */
 function uuidFromString(input: string): string {
@@ -16,9 +17,9 @@ function uuidFromString(input: string): string {
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const ADMIN_EMAIL    = process.env.ADMIN_EMAIL?.toLowerCase();
-const ADMIN_USER_ID  = process.env.ADMIN_USER_ID;
-const ADMIN_ORG_ID   = process.env.ADMIN_ORG_ID;
+const ADMIN_EMAIL   = process.env.ADMIN_EMAIL?.toLowerCase();
+const ADMIN_USER_ID = process.env.ADMIN_USER_ID;
+const ADMIN_ORG_ID  = process.env.ADMIN_ORG_ID;
 // (Somente fallback dev – não usamos em user normal agora)
 const DEFAULT_ORG_ID = process.env.DEFAULT_ORG_ID || uuidFromString("default");
 
@@ -34,19 +35,14 @@ export async function POST(req: NextRequest) {
       const form = await req.formData();
       body = Object.fromEntries(form.entries());
     } else {
-      // tenta json como fallback
       body = await req.json().catch(() => ({}));
     }
 
     const email = String(body.email ?? "").trim().toLowerCase();
     const password = String(body.password ?? "");
 
-    if (!email) {
-      return NextResponse.json({ error: "E-mail é obrigatório" }, { status: 400 });
-    }
-    if (!password) {
-      return NextResponse.json({ error: "Senha é obrigatória" }, { status: 400 });
-    }
+    if (!email)  return NextResponse.json({ error: "E-mail é obrigatório" }, { status: 400 });
+    if (!password) return NextResponse.json({ error: "Senha é obrigatória" }, { status: 400 });
 
     // --- atalho ADMIN (se definido via env) ---
     const isAdmin =
@@ -56,10 +52,8 @@ export async function POST(req: NextRequest) {
       UUID_RX.test(ADMIN_USER_ID);
 
     if (isAdmin) {
-      // Para admin, org = ADMIN_ORG_ID (se válida) senão o próprio ADMIN_USER_ID
       const adminOrg =
-        (ADMIN_ORG_ID && UUID_RX.test(ADMIN_ORG_ID) && ADMIN_ORG_ID) ||
-        ADMIN_USER_ID;
+        (ADMIN_ORG_ID && UUID_RX.test(ADMIN_ORG_ID) && ADMIN_ORG_ID) || ADMIN_USER_ID;
 
       const res = NextResponse.json({
         ok: true,
@@ -73,14 +67,16 @@ export async function POST(req: NextRequest) {
     }
 
     // --- login de usuário "normal" (tabela app_users) ---
-    const { data: user, error } = await supabaseAdmin
+    const sb = supabaseAdmin().schema("Produto_Afiliado");
+
+    const { data: user, error } = await sb
       .from("app_users")
       .select("id, email, name, password_hash, is_active")
       .eq("email", email)
       .maybeSingle();
 
     if (error) {
-      // (opcional: log no servidor)
+      console.error("[/api/auth/login] select app_users error:", error.message);
       return NextResponse.json({ error: "Erro ao buscar usuário." }, { status: 500 });
     }
     if (!user) {
@@ -96,20 +92,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Credenciais inválidas." }, { status: 401 });
     }
 
-    // ✅ Multi-tenant simples: orgId = próprio user.id
-    const userOrgId = String(user.id);
+    // Multi-tenant: pega (ou cria) a org principal do usuário
+    const { orgId, org } = await getOrCreatePrimaryOrg(user.id, user.email);
 
     const res = NextResponse.json({
       ok: true,
       userId: user.id,
-      orgId: userOrgId,
+      orgId,
       email: user.email,
       name: user.name ?? null,
+      org,
     });
 
-    createSessionCookie(res as any, { userId: user.id, orgId: userOrgId });
+    createSessionCookie(res as any, { userId: user.id, orgId });
     return res;
   } catch (e: any) {
+    console.error("[/api/auth/login] error:", e?.message);
     return NextResponse.json({ error: e?.message || "Erro no login" }, { status: 400 });
   }
 }
