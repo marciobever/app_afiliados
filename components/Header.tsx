@@ -2,20 +2,37 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
 
+// checa app_session no client
+function hasSessionCookie() {
+  if (typeof document === 'undefined') return false;
+  return document.cookie.split(';').some(c => c.trim().startsWith('app_session='));
+}
+
 export default function Header() {
   const [open, setOpen] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
 
-  const nav = [
+  // Detecta sessão após montar (e a cada troca de rota a verificação refaz naturalmente)
+  useEffect(() => {
+    setLoggedIn(hasSessionCookie());
+  }, []);
+
+  const navPublic = [
     { href: '/#como-funciona', label: 'Como funciona' },
     { href: '/#recursos', label: 'Recursos' },
     { href: '/#depoimentos', label: 'Depoimentos' },
     { href: '/#faq', label: 'FAQ' },
+  ];
+
+  const navPrivate = [
+    { href: '/dashboard/shopee', label: 'Dashboard' },
+    { href: '/dashboard/configuracoes', label: 'Configurações' },
   ];
 
   return (
@@ -32,17 +49,32 @@ export default function Header() {
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-6 text-sm">
-            {nav.map((i) => (
+            {navPublic.map((i) => (
               <Link key={i.href} href={i.href} className="hover:text-gray-700">
                 {i.label}
               </Link>
             ))}
+            {loggedIn &&
+              navPrivate.map((i) => (
+                <Link key={i.href} href={i.href} className="hover:text-gray-700">
+                  {i.label}
+                </Link>
+              ))}
           </nav>
 
-          {/* Ações */}
+          {/* Ações (direita) */}
           <div className="hidden sm:flex items-center gap-2">
-            <Link href="/login" className="btn btn-ghost">Entrar</Link>
-            <Link href="/signup" className="btn btn-primary">Criar conta</Link>
+            {loggedIn ? (
+              <>
+                <Link href="/dashboard/shopee" className="btn btn-ghost">Painel</Link>
+                <Link href="/api/auth/logout" className="btn btn-primary">Sair</Link>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="btn btn-ghost">Entrar</Link>
+                <Link href="/signup" className="btn btn-primary">Criar conta</Link>
+              </>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -59,11 +91,11 @@ export default function Header() {
         <div
           className={cx(
             'md:hidden transition-all overflow-hidden',
-            open ? 'max-h-96 mt-3' : 'max-h-0'
+            open ? 'max-h-[60vh] mt-3' : 'max-h-0'
           )}
         >
           <div className="flex flex-col gap-2 border-t pt-3">
-            {nav.map((i) => (
+            {[...navPublic, ...(loggedIn ? navPrivate : [])].map((i) => (
               <Link
                 key={i.href}
                 href={i.href}
@@ -73,13 +105,43 @@ export default function Header() {
                 {i.label}
               </Link>
             ))}
+
             <div className="flex items-center gap-2 pt-2">
-              <Link href="/login" className="btn btn-ghost w-full" onClick={() => setOpen(false)}>
-                Entrar
-              </Link>
-              <Link href="/signup" className="btn btn-primary w-full" onClick={() => setOpen(false)}>
-                Criar conta
-              </Link>
+              {loggedIn ? (
+                <>
+                  <Link
+                    href="/dashboard/shopee"
+                    className="btn btn-ghost w-full"
+                    onClick={() => setOpen(false)}
+                  >
+                    Painel
+                  </Link>
+                  <Link
+                    href="/api/auth/logout"
+                    className="btn btn-primary w-full"
+                    onClick={() => setOpen(false)}
+                  >
+                    Sair
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="btn btn-ghost w-full"
+                    onClick={() => setOpen(false)}
+                  >
+                    Entrar
+                  </Link>
+                  <Link
+                    href="/signup"
+                    className="btn btn-primary w-full"
+                    onClick={() => setOpen(false)}
+                  >
+                    Criar conta
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>
