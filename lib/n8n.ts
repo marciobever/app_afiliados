@@ -1,62 +1,71 @@
 // lib/n8n.ts
-const BASE = process.env.N8N_BASE_URL!;
-const TOKEN = process.env.N8N_TOKEN || "";
+'use server';
+import 'server-only';
 
-/** Headers padrão, incluindo auth opcional */
+const BASE = (process.env.N8N_BASE_URL || '').replace(/\/+$/, '');
+const TOKEN = process.env.N8N_TOKEN || '';
+const N8N_SECRET = process.env.N8N_SECRET || '';
+
 function defaultHeaders() {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+  const h: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
   };
-  if (TOKEN) headers["Authorization"] = TOKEN.startsWith("Bearer ") ? TOKEN : `Bearer ${TOKEN}`;
-  return headers;
+  // auth opcional por token Bearer
+  if (TOKEN) h['Authorization'] = TOKEN.startsWith('Bearer ') ? TOKEN : `Bearer ${TOKEN}`;
+  // auth opcional via x-api-key (alinhado com seus webhooks)
+  if (N8N_SECRET) h['x-api-key'] = N8N_SECRET;
+  return h;
 }
 
-/** Faz POST seguro ao n8n com timeout e logs úteis */
-export async function postN8N<T = any>(
+/** POST seguro ao n8n com timeout e leitura única do body */
+export async function postN8N<T = unknown>(
   path: string,
-  body: unknown,
+  payload: unknown,
   opts?: { timeoutMs?: number; verbose?: boolean }
 ): Promise<T> {
-  if (!BASE) {
-    throw new Error("❌ N8N_BASE_URL not set (defina no .env.local e reinicie o dev server)");
-  }
+  if (!BASE) throw new Error('N8N_BASE_URL não está definido');
 
-  const url = `${BASE.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
-  const timeoutMs = opts?.timeoutMs ?? 15000; // padrão: 15s
+  const url = `${BASE}${path.startsWith('/') ? path : `/${path}`}`;
+  const timeoutMs = opts?.timeoutMs ?? 15000;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     if (opts?.verbose) {
-      console.log("🔹 postN8N:", url, JSON.stringify(body).slice(0, 500));
+      console.log('postN8N →', url, JSON.stringify(payload).slice(0, 500));
     }
 
     const res = await fetch(url, {
-      method: "POST",
+      method: 'POST',
       headers: defaultHeaders(),
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
       signal: controller.signal,
-      cache: "no-store",
+      cache: 'no-store',
+      // ajuda o Next a não tentar cachear nada
+      next: { revalidate: 0 },
     });
 
     clearTimeout(timer);
 
     if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      const summary = txt.slice(0, 400) || "(sem resposta)";
-      throw new Error(`❌ n8n POST ${url} → ${res.status} ${res.statusText}\n${summary}`);
+      // lê UMA vez para debugar sem quebrar o stream
+      const txt = await res.text().catch(() => '');
+      const snippet = txt?.slice(0, 400) || '(sem corpo)';
+      throw new Error(`n8n ${res.status} ${res.statusText} — ${snippet}`);
     }
 
-    // tenta parsear JSON com fallback
+    // tenta JSON uma única vez; se falhar, mostra texto cru
     try {
       return (await res.json()) as T;
     } catch {
       const txt = await res.text();
-      throw new Error(`❌ n8n retornou resposta não-JSON (${url}): ${txt}`);
+      throw new Error(`n8n retornou texto não-JSON: ${txt}`);
     }
   } catch (err: any) {
-    if (err.name === "AbortError") {
-      throw new Error(`⏰ Timeout ao chamar n8n (${timeoutMs}ms): ${url}`);
+    if (err?.name === 'AbortError') {
+      throw new Error(`Timeout (${timeoutMs}ms) chamando ${url}`);
     }
     throw err;
   }
