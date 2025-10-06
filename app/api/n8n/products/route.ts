@@ -1,7 +1,7 @@
 // app/api/n8n/products/route.ts
 import 'server-only';
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import supabaseAdmin from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
