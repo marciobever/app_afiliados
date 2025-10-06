@@ -4,7 +4,7 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 
-const SESSION_COOKIE = "srv_sess";
+const SESSION_COOKIE = "app_session";
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
 
 function expireCookie(res: NextResponse, domain?: string) {
