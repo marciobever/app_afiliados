@@ -19,23 +19,19 @@ const MISSING_TABLE_RX =
 export async function getOrCreatePrimaryOrg(userId: string, email?: string) {
   const sb = supabaseAdmin().schema("Produto_Afiliado");
 
-  // 1) tenta achar org já vinculada ao usuário
   const q = await sb
     .from("org_users")
-    .select(
-      `
+    .select(`
       org_id,
       role,
       orgs:orgs!inner ( id, name, slug )
-    `
-    )
+    `)
     .eq("user_id", userId)
     .limit(1)
     .maybeSingle();
 
   if (q.error) {
     if (MISSING_TABLE_RX.test(q.error.message || "")) {
-      // schema/tabelas ainda não expostos → não trava
       return { orgId: userId, org: null, fallback: true as const };
     }
     throw new Error(q.error.message);
@@ -44,11 +40,8 @@ export async function getOrCreatePrimaryOrg(userId: string, email?: string) {
   const orgField = (q.data as any)?.orgs as OrgLite | OrgLite[] | undefined;
   const org: OrgLite | undefined = Array.isArray(orgField) ? orgField[0] : orgField;
 
-  if (org?.id) {
-    return { orgId: org.id, org, fallback: false as const };
-  }
+  if (org?.id) return { orgId: org.id, org, fallback: false as const };
 
-  // 2) não existe -> cria uma org "Pessoal" para o usuário
   const base = (email?.split("@")[0] || "workspace").slice(0, 32);
   const name = `${base} (Pessoal)`;
   const slug = slugify(`${base}-${Math.random().toString(36).slice(2, 6)}`);
@@ -68,7 +61,6 @@ export async function getOrCreatePrimaryOrg(userId: string, email?: string) {
 
   const newOrg = ins.data as OrgLite;
 
-  // 3) vincula como owner (idempotente)
   const up = await sb
     .from("org_users")
     .upsert(
