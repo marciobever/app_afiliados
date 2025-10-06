@@ -1,4 +1,3 @@
-// components/Header.tsx
 'use client';
 
 import Link from 'next/link';
@@ -14,35 +13,20 @@ export default function Header({ initialLoggedIn = false }: Props) {
   const [open, setOpen] = useState(false);
   const [loggedIn, setLoggedIn] = useState(initialLoggedIn);
 
-  // 🔎 Detecta sessão no mount e mantém em sincronia
+  // 🔎 checa sessão no mount, ao focar a aba e após navegações
   useEffect(() => {
-    let abort = false;
-    (async () => {
+    const check = async () => {
       try {
-        const res = await fetch('/api/auth/me', {
-          method: 'GET',
-          credentials: 'include',      // <-- envia cookies
-          cache: 'no-store',           // <-- evita cache
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!abort) setLoggedIn(Boolean(json?.ok));
+        const r = await fetch('/api/auth/me', { cache: 'no-store' });
+        setLoggedIn(r.ok);
       } catch {
-        if (!abort) setLoggedIn(false);
+        setLoggedIn(false);
       }
-    })();
-    return () => { abort = true; };
+    };
+    check();
+    window.addEventListener('focus', check);
+    return () => window.removeEventListener('focus', check);
   }, []);
-
-  async function logout() {
-    try {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',        // <-- IMPORTANTE para limpar cookie
-      });
-    } catch {}
-    // Redireciona; o middleware garante que /dashboard etc. fiquem bloqueados
-    window.location.href = '/login';
-  }
 
   const navPublic = [
     { href: '/#como-funciona', label: 'Como funciona' },
@@ -55,6 +39,15 @@ export default function Header({ initialLoggedIn = false }: Props) {
     { href: '/dashboard/shopee', label: 'Dashboard' },
     { href: '/dashboard/configuracoes', label: 'Configurações' },
   ];
+
+  async function logout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    // ✅ atualiza UI imediatamente e redireciona
+    setLoggedIn(false);
+    window.location.href = '/';
+  }
 
   return (
     <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-[#FFD9CF]">
@@ -83,7 +76,7 @@ export default function Header({ initialLoggedIn = false }: Props) {
               ))}
           </nav>
 
-          {/* Ações (direita) */}
+          {/* Actions (right) */}
           <div className="hidden sm:flex items-center gap-2">
             {loggedIn ? (
               <>
@@ -109,12 +102,7 @@ export default function Header({ initialLoggedIn = false }: Props) {
         </div>
 
         {/* Mobile nav */}
-        <div
-          className={cx(
-            'md:hidden transition-all overflow-hidden',
-            open ? 'max-h-[60vh] mt-3' : 'max-h-0'
-          )}
-        >
+        <div className={cx('md:hidden transition-all overflow-hidden', open ? 'max-h-[60vh] mt-3' : 'max-h-0')}>
           <div className="flex flex-col gap-2 border-t pt-3">
             {[...navPublic, ...(loggedIn ? navPrivate : [])].map((i) => (
               <Link
@@ -130,11 +118,7 @@ export default function Header({ initialLoggedIn = false }: Props) {
             <div className="flex items-center gap-2 pt-2">
               {loggedIn ? (
                 <>
-                  <Link
-                    href="/dashboard/shopee"
-                    className="btn btn-ghost w-full"
-                    onClick={() => setOpen(false)}
-                  >
+                  <Link href="/dashboard/shopee" className="btn btn-ghost w-full" onClick={() => setOpen(false)}>
                     Painel
                   </Link>
                   <button onClick={logout} className="btn btn-primary w-full">
@@ -143,18 +127,10 @@ export default function Header({ initialLoggedIn = false }: Props) {
                 </>
               ) : (
                 <>
-                  <Link
-                    href="/login"
-                    className="btn btn-ghost w-full"
-                    onClick={() => setOpen(false)}
-                  >
+                  <Link href="/login" className="btn btn-ghost w-full" onClick={() => setOpen(false)}>
                     Entrar
                   </Link>
-                  <Link
-                    href="/signup"
-                    className="btn btn-primary w-full"
-                    onClick={() => setOpen(false)}
-                  >
+                  <Link href="/signup" className="btn btn-primary w-full" onClick={() => setOpen(false)}>
                     Criar conta
                   </Link>
                 </>
