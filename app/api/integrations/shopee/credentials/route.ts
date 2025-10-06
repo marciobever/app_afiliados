@@ -12,27 +12,31 @@ const MISSING =
 
 const j = (data: any, status = 200) => NextResponse.json(data, { status });
 
-// — garante que a org existe no **schema Produto_Afiliado** (não no public)
+/** Garante que exista um registro na tabela Produto_Afiliado.orgs para a org atual. */
 async function ensureOrg(orgId: string) {
   const sb = SB();
+
   const r = await sb.from("orgs").select("id").eq("id", orgId).maybeSingle();
   if (r.error) {
-    // se schema/tabela ainda não expostos, não quebra a tela
-    if (MISSING.test(r.error.message || "")) return;
+    if (MISSING.test(r.error.message || "")) return; // schema/tabela ainda não expostos → não quebra
     throw new Error(`Falha ao verificar orgs: ${r.error.message}`);
   }
-  if (!r.data) {
-    // cria silenciosamente (idempotente)
-    await sb
-      .from("orgs")
-      .insert({
-        id: orgId,
-        name: "Default",
-        slug: `org-${orgId.slice(0, 8)}`,
-      })
-      .select("id")
-      .single()
-      .catch(() => undefined);
+  if (r.data) return;
+
+  // tenta criar; se der conflito/erro não crítico, apenas ignora
+  const ins = await sb
+    .from("orgs")
+    .insert({
+      id: orgId,
+      name: "Default",
+      slug: `org-${orgId.slice(0, 8)}`,
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (ins?.error && !MISSING.test(ins.error.message || "")) {
+    // conflitos de chave etc. podem ser ignorados silenciosamente
+    // se quiser logar: console.warn("[ensureOrg] insert orgs:", ins.error.message);
   }
 }
 
@@ -76,7 +80,7 @@ export async function PUT(req: NextRequest) {
     const region = (body.region ? String(body.region) : "BR").toUpperCase();
     const active = Boolean(body.active ?? true);
 
-    // Se `secret` vier vazio/omitido, NÃO sobrescreve o que já existe
+    // só sobrescreve secret se vier preenchido
     const secretProvided =
       body.secret !== undefined &&
       body.secret !== null &&
