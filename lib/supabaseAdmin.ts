@@ -1,21 +1,32 @@
 // lib/supabaseAdmin.ts
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const url = process.env.SUPABASE_URL!;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
 if (!url) throw new Error("SUPABASE_URL ausente");
 if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY ausente");
 
-// cliente único (server-side, sem persistência)
-const _client = createClient(url, key, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+// Evita criar múltiplos clientes em dev (hot-reload do Next.js)
+const globalForSb = globalThis as unknown as { __SB_ADMIN__?: SupabaseClient };
 
-// 1) export default: cliente direto
-export default _client;
+// Singleton
+export const sbAdmin: SupabaseClient =
+  globalForSb.__SB_ADMIN__ ??
+  createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
-// 2) export nomeado: função compatível com código que chama supabaseAdmin()
+if (!globalForSb.__SB_ADMIN__) globalForSb.__SB_ADMIN__ = sbAdmin;
+
+// Export default (compatível com teu código atual)
+export default sbAdmin;
+
+// Função compatível com o que já chama supabaseAdmin()
 export function supabaseAdmin() {
-  return _client;
+  return sbAdmin;
+}
+
+// Helper opcional: já entra no schema padrão do projeto
+export function adminSchema(name = "Produto_Afiliado") {
+  return sbAdmin.schema(name);
 }
