@@ -2,26 +2,17 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+
+type Props = { initialLoggedIn?: boolean };
 
 function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
 
-// checa app_session no client
-function hasSessionCookie() {
-  if (typeof document === 'undefined') return false;
-  return document.cookie.split(';').some(c => c.trim().startsWith('app_session='));
-}
-
-export default function Header() {
+export default function Header({ initialLoggedIn = false }: Props) {
   const [open, setOpen] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(false);
-
-  // Detecta sessão após montar (e a cada troca de rota a verificação refaz naturalmente)
-  useEffect(() => {
-    setLoggedIn(hasSessionCookie());
-  }, []);
+  const [loggedIn, setLoggedIn] = useState(initialLoggedIn);
 
   const navPublic = [
     { href: '/#como-funciona', label: 'Como funciona' },
@@ -35,12 +26,20 @@ export default function Header() {
     { href: '/dashboard/configuracoes', label: 'Configurações' },
   ];
 
+  async function logout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    // Como o cookie é httpOnly, apenas redirecionamos:
+    window.location.href = '/';
+  }
+
   return (
     <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-[#FFD9CF]">
       <div className="mx-auto max-w-7xl px-4 py-3">
         <div className="flex items-center justify-between gap-4">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2" aria-label="SeuReview - Início">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#EE4D2D] text-white font-bold">
               SR
             </span>
@@ -67,7 +66,7 @@ export default function Header() {
             {loggedIn ? (
               <>
                 <Link href="/dashboard/shopee" className="btn btn-ghost">Painel</Link>
-                <Link href="/api/auth/logout" className="btn btn-primary">Sair</Link>
+                <button onClick={logout} className="btn btn-primary">Sair</button>
               </>
             ) : (
               <>
@@ -116,13 +115,9 @@ export default function Header() {
                   >
                     Painel
                   </Link>
-                  <Link
-                    href="/api/auth/logout"
-                    className="btn btn-primary w-full"
-                    onClick={() => setOpen(false)}
-                  >
+                  <button onClick={logout} className="btn btn-primary w-full">
                     Sair
-                  </Link>
+                  </button>
                 </>
               ) : (
                 <>
