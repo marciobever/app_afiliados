@@ -1,4 +1,7 @@
 // app/api/auth/signup/route.ts
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { NextRequest, NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import bcrypt from "bcryptjs";
@@ -7,7 +10,18 @@ import { getOrCreatePrimaryOrg } from "@/lib/orgs";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
+    // aceitar JSON e form-url-encoded
+    const ctype = (req.headers.get("content-type") || "").toLowerCase();
+    let body: Record<string, any> = {};
+    if (ctype.includes("application/json")) {
+      body = await req.json().catch(() => ({}));
+    } else if (ctype.includes("application/x-www-form-urlencoded")) {
+      const form = await req.formData();
+      body = Object.fromEntries(form.entries());
+    } else {
+      body = await req.json().catch(() => ({}));
+    }
+
     const email = String(body.email ?? "").trim().toLowerCase();
     const name = String(body.name ?? "").trim();
     const password = String(body.password ?? "");
