@@ -15,7 +15,6 @@ export async function GET() {
     }
 
     const sb = supabaseAdmin().schema("Produto_Afiliado");
-
     const { data, error } = await sb
       .from("social_integrations")
       .select("access_token")
@@ -32,7 +31,6 @@ export async function GET() {
     }
 
     const token = data.access_token as string;
-
     const res = await fetch(
       `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,instagram_business_account{id,username}&access_token=${encodeURIComponent(
         token
@@ -42,11 +40,10 @@ export async function GET() {
 
     if (!res.ok) {
       let details: any = null;
-      try { details = await res.json(); } catch {}
-      return NextResponse.json(
-        { error: "graph_error", status: res.status, details },
-        { status: 502 }
-      );
+      try {
+        details = await res.json();
+      } catch {}
+      return NextResponse.json({ error: "graph_error", status: res.status, details }, { status: 502 });
     }
 
     const json = await res.json();
