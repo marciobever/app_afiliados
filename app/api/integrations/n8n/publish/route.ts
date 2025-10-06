@@ -1,7 +1,8 @@
 // app/api/integrations/n8n/publish/route.ts
+import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { getUserContext } from '@/lib/auth';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,20 +12,6 @@ const N8N_PUBLISH_URL =
   process.env.N8N_PUBLISH_URL ||
   process.env.N8N_PUBLISH_WEBHOOK_URL ||
   'https://n8n.seureview.com.br/webhook/social';
-
-// --- Supabase admin client ---
-const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-
-function supabaseAdmin() {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórias.');
-  }
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false },
-  });
-}
 
 type PlatformKey = 'facebook' | 'instagram' | 'x';
 
@@ -76,14 +63,13 @@ function ensureSafeProduct(baseUrl: string, p?: Partial<Product> | null): Produc
   };
 }
 
-// ✅ sem updated_at e sem id
+// Busca a integração Meta mais recente do usuário
 async function getLatestMetaIntegrationByUser(userId: string) {
-  const sb = supabaseAdmin();
+  const sb = supabaseAdmin().schema('Produto_Afiliado');
 
   const { data, error } = await sb
     .from('social_integrations')
-    .select(
-      `
+    .select(`
       provider,
       meta_user_id,
       access_token,
@@ -94,8 +80,7 @@ async function getLatestMetaIntegrationByUser(userId: string) {
       granted_scopes,
       obtained_at,
       expires_in
-    `
-    )
+    `)
     .eq('user_id', userId)
     .eq('provider', 'meta')
     .order('obtained_at', { ascending: false, nullsFirst: false })
@@ -124,12 +109,8 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    if (!caption) {
-      return NextResponse.json({ error: 'missing_caption' }, { status: 400 });
-    }
-    if (!trackedUrl) {
-      return NextResponse.json({ error: 'missing_tracked_url' }, { status: 400 });
-    }
+    if (!caption) return NextResponse.json({ error: 'missing_caption' }, { status: 400 });
+    if (!trackedUrl) return NextResponse.json({ error: 'missing_tracked_url' }, { status: 400 });
 
     let userId = '';
     let orgId = '';
@@ -184,7 +165,6 @@ export async function POST(req: NextRequest) {
     }
 
     const payloadForN8n = {
-      // Publicação direta (workflow n8n moderno)
       provider,
       caption,
       image_url,
@@ -192,7 +172,7 @@ export async function POST(req: NextRequest) {
       ig_business_id: provider === 'instagram' ? ig_business_id : null,
       fb_page_id: provider === 'meta' ? fb_page_id : null,
 
-      // Compat com workflow antigo
+      // compat legado
       platform,
       platform_subid: platform,
       link: trackedUrl,
