@@ -1,29 +1,32 @@
 // app/api/auth/me/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { readSessionCookie, clearSessionCookie } from "@/lib/auth";
+import { getUserContext, clearSessionCookie } from "@/lib/auth";
 
-export async function GET(req: NextRequest) {
-  const sess = readSessionCookie(req);
-  if (!sess?.userId) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+// Retorna dados básicos da sessão + perfil do usuário
+export async function GET() {
+  const sess = getUserContext(); // { userId, orgId } ou { userId:null, orgId:null }
+
+  if (!sess.userId) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  const { data: user } = await supabaseAdmin
+  const { data: profile, error } = await supabaseAdmin
     .from("app_users")
-    .select("id, email, is_active")
+    .select("id, email, name, is_active")
     .eq("id", sess.userId)
     .maybeSingle();
 
-  if (!user || user.is_active === false) {
-    const res = NextResponse.json({ error: "invalid_session" }, { status: 401 });
-    clearSessionCookie(res as any);
-    return res;
+  if (error) {
+    return NextResponse.json({ ok: false, error: "db_error" }, { status: 500 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    user: { id: user.id, email: user.email, is_active: user.is_active },
-    orgId: sess.orgId,
-  });
+  return NextResponse.json({ ok: true, session: sess, profile });
+}
+
+// Opcional: logout via DELETE /api/auth/me
+export async function DELETE() {
+  const res = NextResponse.json({ ok: true });
+  clearSessionCookie(res as any);
+  return res;
 }
