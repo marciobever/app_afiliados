@@ -1,95 +1,121 @@
 // lib/auth.ts
-import { cookies } from "next/headers";
-import type { NextResponse } from "next/server";
-import jwt from "jsonwebtoken";
+import { cookies, headers } from "next/headers";
+import { NextResponse } from "next/server";
+import { createHmac, timingSafeEqual } from "crypto";
 
-const APP_SESSION_SECRET = process.env.APP_SESSION_SECRET || "dev-secret";
-const COOKIE_NAME = "app_session";
-const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
+const SESSION_COOKIE = "srv_sess";
+const SECRET = process.env.APP_SESSION_SECRET || "";
+if (!SECRET) console.warn("[auth] APP_SESSION_SECRET ausente!");
 
-export type SessionPayload = {
-  userId: string; // sempre UUID agora
-  orgId: string;  // ex.: "default" ou ID real da org
-};
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined; // ex.: .seureview.com.br
+const PROD = process.env.NODE_ENV === "production";
+const MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 dias
 
-/* -------------------------------------------------------
- * Criação e verificação de tokens de sessão
- * ----------------------------------------------------- */
+type SessionPayload = { userId: string; orgId: string; iat: number; exp: number };
 
-/** Cria um JWT com validade de 30 dias */
-export function createSessionToken(payload: SessionPayload) {
-  return jwt.sign(payload, APP_SESSION_SECRET, { expiresIn: "30d" });
+// helpers base64url
+function b64u(s: Buffer | string) {
+  return Buffer.from(s).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+function ub64u(s: string) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  return Buffer.from(s, "base64");
 }
 
-/** Verifica e decodifica o JWT */
-export function verifySessionToken(token: string): SessionPayload {
-  const raw = jwt.verify(token, APP_SESSION_SECRET) as
-    | SessionPayload
-    | { userIdNorm?: string; orgId?: string };
+// assina payload => token compacto (header.payload.sig)
+function sign(payload: Omit<SessionPayload, "iat" | "exp">, maxAgeSec = MAX_AGE_SECONDS) {
+  const header = { alg: "HS256", typ: "JWT" };
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + maxAgeSec;
+  const body: SessionPayload = { ...payload, iat, exp };
+  const h = b64u(JSON.stringify(header));
+  const p = b64u(JSON.stringify(body));
+  const mac = createHmac("sha256", SECRET).update(`${h}.${p}`).digest();
+  const s = b64u(mac);
+  return `${h}.${p}.${s}`;
+}
 
-  const userId =
-    (raw as any).userId ??
-    (raw as any).userIdNorm ??
-    "";
+function verify(token: string): SessionPayload | null {
+  try {
+    const [h, p, s] = token.split(".");
+    if (!h || !p || !s) return null;
+    const mac = createHmac("sha256", SECRET).update(`${h}.${p}`).digest();
+    const sig = ub64u(s);
+    if (mac.length !== sig.length || !timingSafeEqual(mac, sig)) return null;
+    const payload = JSON.parse(ub64u(p).toString("utf8")) as SessionPayload;
+    if (!payload?.userId || !payload?.orgId) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < now) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
 
-  const orgId = (raw as any).orgId ?? "default";
+function cookieOptions(maxAge = MAX_AGE_SECONDS) {
+  return {
+    httpOnly: true,
+    secure: PROD,
+    sameSite: "lax" as const,
+    maxAge,
+    path: "/",
+    domain: COOKIE_DOMAIN, // ex.: .seureview.com.br
+  };
+}
 
-  if (!userId) throw new Error("bad_session_user");
+/** Lê e valida o cookie de sessão; renova (rolling) de forma transparente. */
+export function getUserContext(): { userId: string | null; orgId: string | null } {
+  const jar = cookies();
+  const tok = jar.get(SESSION_COOKIE)?.value;
+  if (!tok) return { userId: null, orgId: null };
+
+  const payload = verify(tok);
+  if (!payload) {
+    // cookie inválido/expirado => limpa silenciosamente
+    try { jar.set(SESSION_COOKIE, "", { ...cookieOptions(0), maxAge: 0 }); } catch {}
+    return { userId: null, orgId: null };
+  }
+
+  // rolling session: renova se passou > 25% do tempo
+  const now = Math.floor(Date.now() / 1000);
+  const lifetime = payload.exp - payload.iat;
+  const elapsed = now - payload.iat;
+  if (elapsed > lifetime * 0.25) {
+    const fresh = sign({ userId: payload.userId, orgId: payload.orgId }, MAX_AGE_SECONDS);
+    try { jar.set(SESSION_COOKIE, fresh, cookieOptions()); } catch {}
+  }
+
+  return { userId: payload.userId, orgId: payload.orgId };
+}
+
+/** Seta o cookie de sessão na resposta. */
+export function createSessionCookie(
+  res: NextResponse,
+  data: { userId: string; orgId: string },
+  maxAgeSec = MAX_AGE_SECONDS
+) {
+  const token = sign({ userId: data.userId, orgId: data.orgId }, maxAgeSec);
+  res.cookies.set(SESSION_COOKIE, token, cookieOptions(maxAgeSec));
+}
+
+/** Remove o cookie de sessão. */
+export function clearSessionCookie(res: NextResponse) {
+  res.cookies.set(SESSION_COOKIE, "", { ...cookieOptions(0), maxAge: 0 });
+}
+
+/** Helper para handlers que exigem sessão. */
+export function requireSession() {
+  const { userId, orgId } = getUserContext();
+  if (!userId || !orgId) throw new Error("unauthorized");
   return { userId, orgId };
 }
 
-/* -------------------------------------------------------
- * Manipulação de cookies
- * ----------------------------------------------------- */
-
-/** Cria e grava o cookie de sessão seguro */
-export function createSessionCookie(res: NextResponse, payload: SessionPayload) {
-  const token = createSessionToken(payload);
-  // @ts-ignore NextResponse.cookies existe em runtime
-  res.cookies.set({
-    name: COOKIE_NAME,
-    value: token,
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30, // 30 dias
-    domain: COOKIE_DOMAIN, // ex.: .receitapopular.com.br
-  });
-}
-
-/** Apaga o cookie de sessão */
-export function clearSessionCookie(res: NextResponse) {
-  // @ts-ignore
-  res.cookies.set({
-    name: COOKIE_NAME,
-    value: "",
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 0,
-    domain: COOKIE_DOMAIN,
-  });
-}
-
-/* -------------------------------------------------------
- * Leitura segura da sessão no server-side
- * ----------------------------------------------------- */
-
-/**
- * Retorna o userId/orgId da sessão atual.
- * Nunca lança erro — devolve { userId: null, orgId: null } se inválido.
- */
-export function getUserContext():
-  | SessionPayload
-  | { userId: null; orgId: null } {
-  try {
-    const c = cookies();
-    const token = c.get(COOKIE_NAME)?.value;
-    if (!token) throw new Error("no_session");
-    return verifySessionToken(token);
-  } catch {
-    return { userId: null, orgId: null };
-  }
+// (Opcional) obtém IP/UA para auditoria
+export function getRequestMeta() {
+  const h = headers();
+  return {
+    ip: h.get("x-forwarded-for") || h.get("x-real-ip") || "",
+    ua: h.get("user-agent") || "",
+  };
 }
