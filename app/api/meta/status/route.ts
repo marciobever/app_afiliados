@@ -1,11 +1,12 @@
+// app/api/meta/status/route.ts
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getUserContext } from "@/lib/auth";
 
 export async function GET() {
   try {
-    const { userId } = getUserContext(); // precisa estar logado
-    const sb = supabaseAdmin();
+    const { userId } = getUserContext();
+    const sb = supabaseAdmin().schema("Produto_Afiliado");
 
     const { data, error } = await sb
       .from("social_integrations")
@@ -27,9 +28,6 @@ export async function GET() {
       expires_in: data?.expires_in ?? null,
     });
   } catch (e: any) {
-    return NextResponse.json(
-      { connected: false, error: e?.message || "auth_error" },
-      { status: 200 }
-    );
+    return NextResponse.json({ connected: false, error: e?.message || "auth_error" }, { status: 200 });
   }
 }
