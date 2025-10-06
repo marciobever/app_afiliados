@@ -3,7 +3,8 @@ import "./globals.css";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { Inter } from "next/font/google";
-import Logo from "@/components/Logo"; // <- atenção ao case
+import Logo from "@/components/Logo";
+import Header from "@/components/Header";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -13,52 +14,19 @@ export const metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Lê o cookie httpOnly no server
   const hasSession = cookies().has("app_session");
 
   return (
     <html lang="pt-BR">
       <body className={`${inter.className} bg-white text-gray-900 antialiased`}>
-        {/* NAVBAR GLOBAL */}
-        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b">
-          <div className="mx-auto max-w-7xl px-4">
-            <div className="h-14 flex items-center justify-between gap-4">
-              <Link href="/" className="shrink-0" aria-label="Ir para início">
-                <Logo />
-              </Link>
-
-              <nav className="hidden md:flex items-center gap-1 text-sm">
-                <Link className="nav-item" href="/">Início</Link>
-                {hasSession && (
-                  <>
-                    <Link className="nav-item" href="/dashboard/shopee">Dashboard</Link>
-                    <Link className="nav-item" href="/dashboard/configuracoes">Configurações</Link>
-                  </>
-                )}
-                <Link className="nav-item" href="/#como-funciona">Como funciona</Link>
-                <Link className="nav-item" href="/#recursos">Recursos</Link>
-                <Link className="nav-item" href="/#depoimentos">Depoimentos</Link>
-              </nav>
-
-              <div className="flex items-center gap-2">
-                {hasSession ? (
-                  <Link href="/dashboard/shopee" className="btn btn-primary">
-                    Abrir painel
-                  </Link>
-                ) : (
-                  <>
-                    <Link href="/login" className="btn btn-ghost">Entrar</Link>
-                    <Link href="/signup" className="btn btn-primary">Criar conta</Link>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </header>
+        {/* HEADER ÚNICO (client) */}
+        <Header initialLoggedIn={hasSession} />
 
         {/* CONTEÚDO */}
         <main className="mx-auto max-w-7xl px-4 py-10">{children}</main>
 
-        {/* FOOTER GLOBAL */}
+        {/* FOOTER ÚNICO */}
         <footer className="border-t mt-10">
           <div className="mx-auto max-w-7xl px-4 py-10 text-sm text-gray-600">
             <div className="flex flex-wrap items-center justify-between gap-4">
