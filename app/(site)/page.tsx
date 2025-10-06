@@ -1,103 +1,155 @@
-// app/(site)/page.tsx
+'use client';
 import Link from "next/link";
 import Hero from "@/components/Hero";
+import ComoFunciona from "@/components/ComoFunciona";
 import Newsletter from "@/components/Newsletter";
+import { motion } from "framer-motion";
 
 export const dynamic = "force-dynamic";
 
 export default function LandingPage() {
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen overflow-hidden">
+      {/* HERO */}
       <Hero />
 
-      <div className="mx-auto max-w-7xl px-6 space-y-24 py-16">
+      <div className="mx-auto max-w-7xl px-6 space-y-32 py-16">
         {/* COMO FUNCIONA */}
-        <section id="como-funciona">
-          <h2 className="text-2xl md:text-3xl font-bold">Como funciona</h2>
-          <p className="mt-2 text-gray-600">Do produto ao post final, em 3 passos.</p>
-
-          <div className="mt-8 grid md:grid-cols-3 gap-6">
-            {[
-              {
-                t: "1) Escolha o produto",
-                d: "Cole a URL do marketplace (Shopee, Amazon, Mercado Livre, AliExpress ou Temu) ou use as sugestões do painel.",
-              },
-              {
-                t: "2) Gere legenda e link",
-                d: "A IA cria uma legenda pronta, e o sistema gera um shortlink com UTM e SubIDs para rastrear por canal.",
-              },
-              {
-                t: "3) Publique",
-                d: "Compartilhe no Instagram e Facebook direto pelo painel, ou exporte para seus fluxos.",
-              },
-            ].map((f, i) => (
-              <div key={i} className="card">
-                <div className="card-body">
-                  <div className="font-semibold">{f.t}</div>
-                  <p className="mt-2 text-sm text-gray-600">{f.d}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        <ComoFunciona />
 
         {/* RECURSOS */}
-        <section id="recursos">
-          <h2 className="text-2xl md:text-3xl font-bold">Recursos principais</h2>
-          <div className="mt-8 grid md:grid-cols-3 gap-6">
+        <motion.section
+          id="recursos"
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          viewport={{ once: true }}
+        >
+          <h2 className="text-3xl md:text-4xl font-bold text-center">
+            Recursos que <span className="text-gradient">potencializam</span> suas vendas
+          </h2>
+          <p className="mt-3 text-gray-600 text-center max-w-2xl mx-auto">
+            Tudo o que você precisa para transformar produtos em conteúdo que converte — em minutos.
+          </p>
+
+          <div className="mt-12 grid md:grid-cols-3 gap-6">
             {[
-              { t: "Legendas com IA", d: "Textos otimizados para engajamento e conversão em IG/FB." },
-              { t: "UTM + SubIDs", d: "Rastreie por plataforma, campanha e variação com facilidade." },
-              { t: "Multi-marketplaces", d: "Shopee, Amazon, Mercado Livre, AliExpress e Temu." },
-              { t: "Agendamento", d: "Defina data e hora para cada publicação sem complicação." },
-              { t: "Estatísticas simples", d: "Acompanhe CTR e cliques por produto e por canal." },
-              { t: "Workspace colaborativo", d: "Equipe e múltiplas contas com segurança." },
+              {
+                t: "Legendas com IA",
+                d: "Textos criados sob medida para engajamento e conversão em Instagram, Facebook e Reels.",
+              },
+              {
+                t: "UTM + SubIDs",
+                d: "Acompanhe cliques e performance por campanha, canal e variação.",
+              },
+              {
+                t: "Multi-marketplaces",
+                d: "Shopee, Amazon, Mercado Livre, AliExpress, Temu e muito mais.",
+              },
+              {
+                t: "Agendamento inteligente",
+                d: "Programe publicações para horários de pico com poucos cliques.",
+              },
+              {
+                t: "Estatísticas em tempo real",
+                d: "CTR, engajamento e receita estimada — tudo em um só lugar.",
+              },
+              {
+                t: "Workspace colaborativo",
+                d: "Trabalhe com equipe e múltiplas contas com segurança e controle.",
+              },
             ].map((f, i) => (
-              <div key={i} className="card">
+              <motion.div
+                key={i}
+                className="card group"
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: i * 0.05 }}
+                viewport={{ once: true }}
+              >
                 <div className="card-body">
-                  <div className="font-medium">{f.t}</div>
+                  <div className="font-semibold text-lg text-gray-900 group-hover:text-[#EE4D2D] transition">
+                    {f.t}
+                  </div>
                   <p className="mt-2 text-sm text-gray-600">{f.d}</p>
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
-        </section>
+        </motion.section>
 
         {/* DEPOIMENTOS */}
-        <section id="depoimentos" className="bg-gray-50 border rounded-2xl p-8">
-          <h2 className="text-2xl md:text-3xl font-bold">Quem usa, recomenda</h2>
-          <div className="mt-6 grid md:grid-cols-3 gap-6">
+        <motion.section
+          id="depoimentos"
+          className="bg-gray-50 border rounded-2xl p-10"
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          viewport={{ once: true }}
+        >
+          <h2 className="text-3xl md:text-4xl font-bold text-center">
+            Quem usa, <span className="text-gradient">recomenda</span>
+          </h2>
+          <div className="mt-8 grid md:grid-cols-3 gap-6">
             {[
-              { n: "Ana", d: "Economizei horas por dia. Publicar virou coisa de 2 cliques." },
-              { n: "Rafael", d: "SubIDs por canal deixaram meus testes A/B claríssimos." },
-              { n: "Bea", d: "Agendamento e legendas com IA bem estáveis. Adeus copiar/colar!" },
+              {
+                n: "Ana Souza",
+                d: "Economizei horas por dia. Agora tudo sai automático, pronto pra postar.",
+              },
+              {
+                n: "Rafael Costa",
+                d: "Os SubIDs me ajudaram a entender o que realmente dá retorno em cada canal.",
+              },
+              {
+                n: "Beatriz Lima",
+                d: "As legendas com IA são ótimas! Publicar virou algo rápido e divertido.",
+              },
             ].map((p, i) => (
-              <div key={i} className="card">
+              <motion.div
+                key={i}
+                className="card bg-white"
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: i * 0.1 }}
+                viewport={{ once: true }}
+              >
                 <div className="card-body">
-                  <p className="text-sm text-gray-700">“{p.d}”</p>
+                  <p className="text-sm text-gray-700 leading-relaxed">“{p.d}”</p>
                   <div className="mt-3 text-xs text-gray-500">— {p.n}</div>
                 </div>
-              </div>
+              </motion.div>
             ))}
           </div>
-        </section>
+        </motion.section>
 
-        {/* CTA + Newsletter */}
-        <section className="text-center">
-          <h3 className="text-2xl md:text-3xl font-bold">
-            Pronto para acelerar suas comissões?
+        {/* CTA + NEWSLETTER */}
+        <motion.section
+          className="text-center space-y-8"
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          viewport={{ once: true }}
+        >
+          <h3 className="text-3xl md:text-4xl font-extrabold">
+            Pronto para <span className="text-gradient">acelerar</span> suas comissões?
           </h3>
-          <p className="mt-2 text-gray-600">
-            Crie sua conta, conecte seus canais e publique hoje mesmo.
+          <p className="mt-2 text-gray-600 max-w-2xl mx-auto">
+            Cadastre-se e comece a publicar produtos prontos com links rastreáveis e legendas otimizadas.
           </p>
-          <div className="mt-6 flex items-center justify-center gap-3">
-            <Link href="/signup" className="btn btn-primary">Criar conta grátis</Link>
-            <Link href="/login" className="btn btn-ghost">Entrar</Link>
+          <div className="flex flex-wrap justify-center gap-4 mt-6">
+            <Link href="/signup" className="btn btn-primary text-base">
+              Criar conta grátis
+            </Link>
+            <Link href="/login" className="btn btn-ghost text-base">
+              Entrar
+            </Link>
           </div>
 
           {/* Newsletter */}
-          <Newsletter />
-        </section>
+          <div className="mt-12">
+            <Newsletter />
+          </div>
+        </motion.section>
       </div>
     </main>
   );
