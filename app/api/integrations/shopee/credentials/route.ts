@@ -1,61 +1,67 @@
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+// app/api/integrations/shopee/credentials/route.ts
+import 'server-only';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-import { NextRequest, NextResponse } from "next/server";
-import supabaseAdmin from "@/lib/supabaseAdmin";
-import { getUserContext } from "@/lib/auth";
+import { NextRequest, NextResponse } from 'next/server';
+import supabaseAdmin from '@/lib/supabaseAdmin';
+import { getUserContext } from '@/lib/auth';
 
-const SB = () => supabaseAdmin().schema("Produto_Afiliado");
+const SB = () => supabaseAdmin().schema('Produto_Afiliado');
 const MISSING =
   /(schema cache)|(does not exist)|relation .* does not exist|not find the table/i;
 
 const j = (data: any, status = 200) => NextResponse.json(data, { status });
 
-/** Garante que exista um registro na tabela Produto_Afiliado.orgs para a org atual. */
+/** Garante que exista um registro na tabela Produto_Afiliado.orgs para a org atual (ignora erros não-críticos). */
 async function ensureOrg(orgId: string) {
   const sb = SB();
 
-  const r = await sb.from("orgs").select("id").eq("id", orgId).maybeSingle();
-  if (r.error) {
-    if (MISSING.test(r.error.message || "")) return; // schema/tabela ainda não expostos → não quebra
-    throw new Error(`Falha ao verificar orgs: ${r.error.message}`);
+  // tenta achar
+  const sel = await sb.from('orgs').select('id').eq('id', orgId).maybeSingle();
+  if (sel.error) {
+    // se schema/tabela ainda não publicados, não quebra o fluxo
+    if (MISSING.test(sel.error.message || '')) return;
+    // outro erro real
+    throw new Error(`Falha ao verificar orgs: ${sel.error.message}`);
   }
-  if (r.data) return;
+  if (sel.data) return;
 
-  // tenta criar; se der conflito/erro não crítico, apenas ignora
+  // tenta criar (se houver FKs/uniques diferentes no seu schema, ajuste as colunas)
   const ins = await sb
-    .from("orgs")
+    .from('orgs')
     .insert({
       id: orgId,
-      name: "Default",
+      name: 'Default',
       slug: `org-${orgId.slice(0, 8)}`,
     })
-    .select("id")
+    .select('id')
     .maybeSingle();
 
-  if (ins?.error && !MISSING.test(ins.error.message || "")) {
-    // conflitos de chave etc. podem ser ignorados silenciosamente
-    // se quiser logar: console.warn("[ensureOrg] insert orgs:", ins.error.message);
+  // conflitos/uniques/etc não precisam derrubar a request
+  if (ins.error && !MISSING.test(ins.error.message || '')) {
+    // opcional: console.warn('[ensureOrg] insert orgs:', ins.error.message);
   }
 }
 
-// GET: carrega credenciais (NÃO retorna secret)
+// GET: carrega credenciais (NÃO retorna o secret)
 export async function GET() {
   try {
     const { orgId } = getUserContext();
-    if (!orgId) return j({ error: "unauthorized" }, 401);
+    if (!orgId) return j({ error: 'unauthorized' }, 401);
 
     await ensureOrg(orgId);
 
     const r = await SB()
-      .from("shopee_credentials")
-      .select("app_id, region, active, updated_at")
-      .eq("org_id", orgId)
+      .from('shopee_credentials')
+      .select('app_id, region, active, updated_at')
+      .eq('org_id', orgId)
       .maybeSingle();
 
     if (r.error) {
-      if (MISSING.test(r.error.message || "")) {
+      if (MISSING.test(r.error.message || '')) {
         return j({ credentials: null, fallback: true });
       }
       return j({ error: r.error.message }, 500);
@@ -67,32 +73,33 @@ export async function GET() {
   }
 }
 
-// PUT: cria/atualiza credenciais em Produto_Afiliado.shopee_credentials
+// PUT: cria/atualiza credenciais (só sobrescreve o secret se for enviado)
 export async function PUT(req: NextRequest) {
   try {
     const { orgId } = getUserContext();
-    if (!orgId) return j({ error: "unauthorized" }, 401);
+    if (!orgId) return j({ error: 'unauthorized' }, 401);
 
     await ensureOrg(orgId);
 
     const body = (await req.json().catch(() => ({}))) as any;
-    const appId = body.appId ? String(body.appId).trim() : "";
-    const region = (body.region ? String(body.region) : "BR").toUpperCase();
+
+    const appId = body.appId ? String(body.appId).trim() : '';
+    const region = (body.region ? String(body.region) : 'BR').toUpperCase();
     const active = Boolean(body.active ?? true);
 
-    // só sobrescreve secret se vier preenchido
     const secretProvided =
       body.secret !== undefined &&
       body.secret !== null &&
-      String(body.secret).trim() !== "";
+      String(body.secret).trim() !== '';
 
+    // precisa ter pelo menos um campo para salvar/atualizar
     if (!appId && !secretProvided) {
-      return j({ error: "appId ou secret obrigatórios" }, 400);
+      return j({ error: 'appId ou secret obrigatórios' }, 400);
     }
 
-    const payload: any = {
+    const payload: Record<string, any> = {
       org_id: orgId,
-      app_id: appId,
+      app_id: appId || undefined, // evita sobrescrever com vazio
       region,
       active,
       updated_at: new Date().toISOString(),
@@ -100,15 +107,15 @@ export async function PUT(req: NextRequest) {
     if (secretProvided) payload.secret = String(body.secret);
 
     const r = await SB()
-      .from("shopee_credentials")
-      .upsert(payload, { onConflict: "org_id" })
-      .select("app_id, region, active")
+      .from('shopee_credentials')
+      .upsert(payload, { onConflict: 'org_id' })
+      .select('app_id, region, active')
       .single();
 
     if (r.error) {
-      if (MISSING.test(r.error.message || "")) {
+      if (MISSING.test(r.error.message || '')) {
         return j(
-          { error: "schema_unavailable", message: r.error.message, fallback: true },
+          { error: 'schema_unavailable', message: r.error.message, fallback: true },
           503
         );
       }
