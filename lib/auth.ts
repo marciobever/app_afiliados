@@ -3,7 +3,7 @@ import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 
-const SESSION_COOKIE = "srv_sess";
+const SESSION_COOKIE = "app_session";
 const SECRET = process.env.APP_SESSION_SECRET || "";
 if (!SECRET) console.warn("[auth] APP_SESSION_SECRET ausente!");
 
