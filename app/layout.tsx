@@ -3,7 +3,7 @@ import "./globals.css";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { Inter } from "next/font/google";
-import Logo from "@/components/logo"; // <- atenção ao case
+import Logo from "@/components/Logo"; // <- atenção ao case
 
 const inter = Inter({ subsets: ["latin"] });
 
