@@ -1,4 +1,5 @@
 // app/api/meta/pages/route.ts
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -8,7 +9,7 @@ import { getUserContext } from "@/lib/auth";
 
 export async function GET() {
   try {
-    const sess = getUserContext(); // { userId, orgId }
+    const sess = getUserContext();
     if (!sess?.userId) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
@@ -35,13 +36,17 @@ export async function GET() {
     const res = await fetch(
       `https://graph.facebook.com/v19.0/me/accounts?fields=id,name,instagram_business_account{id,username}&access_token=${encodeURIComponent(
         token
-      )}`
+      )}`,
+      { cache: "no-store" }
     );
 
-    // Propaga erro do Graph se houver
     if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      return NextResponse.json({ error: "graph_error", details: errJson }, { status: 502 });
+      let details: any = null;
+      try { details = await res.json(); } catch {}
+      return NextResponse.json(
+        { error: "graph_error", status: res.status, details },
+        { status: 502 }
+      );
     }
 
     const json = await res.json();
