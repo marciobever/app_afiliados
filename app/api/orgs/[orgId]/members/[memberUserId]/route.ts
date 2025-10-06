@@ -1,5 +1,9 @@
+// app/api/orgs/[orgId]/members/[memberUserId]/route.ts
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getUserContext } from "@/lib/auth";
 
 export async function PATCH(
@@ -8,9 +12,9 @@ export async function PATCH(
 ) {
   const { orgId, memberUserId } = params;
 
-  // getUserContext NÃO recebe argumentos
   const { userId } = getUserContext();
-  // TODO: validar se userId é owner/admin da orgId antes de permitir alterações
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // TODO: validar permissão owner/admin
 
   const { role } = await req.json().catch(() => ({}));
   if (!role) {
@@ -19,13 +23,12 @@ export async function PATCH(
 
   const sb = supabaseAdmin().schema("Produto_Afiliado");
   const { error } = await sb
-    .from("org_members")
+    .from("org_users")
     .update({ role })
     .eq("org_id", orgId)
     .eq("user_id", memberUserId);
 
-  if (error)
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });
 }
@@ -36,15 +39,18 @@ export async function DELETE(
 ) {
   const { orgId, memberUserId } = params;
 
+  const { userId } = getUserContext();
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // TODO: validar permissão owner/admin
+
   const sb = supabaseAdmin().schema("Produto_Afiliado");
   const { error } = await sb
-    .from("org_members")
+    .from("org_users")
     .delete()
     .eq("org_id", orgId)
     .eq("user_id", memberUserId);
 
-  if (error)
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });
 }
