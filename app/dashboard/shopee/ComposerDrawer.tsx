@@ -23,6 +23,8 @@ type Product = {
   url: string;
 };
 
+/* -------------------- utils -------------------- */
+
 function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
@@ -44,8 +46,6 @@ function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }
     </button>
   );
 }
-
-/* -------------------- helpers -------------------- */
 
 function stripFences(s: string) {
   return String(s)
@@ -131,7 +131,7 @@ async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: P
   const safeProduct = ensureSafeProduct(baseUrl, product);
   const r = await fetch('/api/integrations/shopee/subids', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ base_url: baseUrl, platform, product: safeProduct }),
   });
   const j = await r.json().catch(() => ({}));
@@ -143,7 +143,7 @@ async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: P
 async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payload: any) {
   const r = await fetch('/api/caption', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain;q=0.9,*/*;q=0.8' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain;q=0.9,*/*;q=0.8' },
     body: JSON.stringify({ kind, ...payload }),
   });
   let text = await r.text();
@@ -183,30 +183,28 @@ async function publishToSocial({
   const safeProduct = ensureSafeProduct(product.url, product);
 
   const payload = {
-    platform,                 // 'facebook' | 'instagram' | 'x'
+    platform,
     product: safeProduct,
-    trackedUrl,               // o backend espera "trackedUrl"
+    trackedUrl,
     caption,
     scheduleTime: scheduleTime || null,
   };
 
   const res = await fetch('/api/integrations/n8n/publish', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain;q=0.9,*/*;q=0.8' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain;q=0.9,*/*;q=0.8' },
     body: JSON.stringify(payload),
   });
 
-  // Lê como texto primeiro para evitar AggregateError quando a resposta não é JSON
+  // lê como texto primeiro para evitar AggregateError quando não for JSON
   const raw = await res.text();
   let data: any = null;
   try {
     data = raw ? JSON.parse(raw) : null;
   } catch {
-    // não é JSON — manteremos o raw para diagnóstico
+    // não-JSON — manter raw para diagnóstico
   }
 
-  // Logs úteis para diagnosticar rapidamente no navegador
-  // (não quebra a UX, só ajuda a entender caso algo não seja JSON)
   console.debug('[publishToSocial] status:', res.status, 'raw:', raw);
 
   if (!res.ok || (data && data.error)) {
@@ -217,8 +215,31 @@ async function publishToSocial({
     throw new Error(msg);
   }
 
-  // Se não veio JSON válido mas status é 2xx, consideramos OK.
   return data || { ok: true, raw };
+}
+
+/* -------------------- geração de sublink -------------------- */
+
+/** dispara a geração do shortlink + subids e atualiza o estado */
+async function makeSubLink(
+  baseUrl: string,
+  pl: PlatformKey,
+  product: Product,
+  setBusyLink: (v: boolean) => void,
+  setTrackedUrl: (v: string) => void,
+  setErrMsg: (v: string | null) => void
+) {
+  setBusyLink(true);
+  setErrMsg(null);
+  try {
+    const { url } = await getTrackedUrl(baseUrl, pl, product);
+    setTrackedUrl(url || '');
+  } catch (e: any) {
+    setTrackedUrl('');
+    setErrMsg(e?.message || 'Falha ao montar SubIDs');
+  } finally {
+    setBusyLink(false);
+  }
 }
 
 /* -------------------- componente -------------------- */
@@ -243,25 +264,26 @@ export default function ComposerDrawer({
   React.useEffect(() => {
     if (!open || !product) return;
     let alive = true;
-    (async () => {
-      setBusyLink(true);
-      setErrMsg(null);
-      try {
-        const { url } = await getTrackedUrl(product.url, platform, product);
-        if (!alive) return;
-        setTrackedUrl(url);
-      } catch (e: any) {
-        if (!alive) return;
-        setTrackedUrl('');
-        setErrMsg(e?.message || 'Falha ao gerar link com SubIDs');
-      } finally {
-        if (alive) setBusyLink(false);
-      }
-    })();
+
+    makeSubLink(
+      product.url,
+      platform,
+      product,
+      (v) => alive && setBusyLink(v),
+      (v) => alive && setTrackedUrl(v),
+      (v) => alive && setErrMsg(v)
+    );
+
     return () => {
       alive = false;
     };
   }, [open, product, platform]);
+
+  function onPickPlatform(pl: PlatformKey) {
+    if (!product) return;
+    setPlatform(pl);
+    makeSubLink(product.url, pl, product, setBusyLink, setTrackedUrl, setErrMsg);
+  }
 
   async function handleGenerateCaption() {
     if (!product) return;
@@ -278,8 +300,9 @@ export default function ComposerDrawer({
         });
         const v = Array.isArray(variants) && variants.length ? variants[0] : null;
         setCaption(
-          v ? buildInstagramCaption(v, keyword)
-            : `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl || safeProduct.url}`,
+          v
+            ? buildInstagramCaption(v, keyword)
+            : `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl || safeProduct.url}`
         );
       } else {
         const { variants } = await fetchCaption('facebook_caption', {
@@ -288,8 +311,9 @@ export default function ComposerDrawer({
         });
         const v = Array.isArray(variants) && variants.length ? variants[0] : null;
         setCaption(
-          v ? buildFacebookCaption(v)
-            : `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl || safeProduct.url}`,
+          v
+            ? buildFacebookCaption(v)
+            : `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl || safeProduct.url}`
         );
       }
     } catch (e: any) {
@@ -373,7 +397,7 @@ export default function ComposerDrawer({
               {(['facebook', 'instagram', 'x'] as PlatformKey[]).map((p) => (
                 <button
                   key={p}
-                  onClick={() => setPlatform(p)}
+                  onClick={() => onPickPlatform(p)}
                   className={cx(
                     'px-3 py-1.5 rounded-lg border text-sm',
                     platform === p ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]' : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
@@ -387,6 +411,24 @@ export default function ComposerDrawer({
             <p className="text-[11px] text-[#6B7280] mt-1">
               Ao trocar a plataforma, o link rastreável é atualizado. A legenda só é gerada quando você clicar no botão abaixo.
             </p>
+          </div>
+
+          {/* Link rastreável (recalcular) */}
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium text-[#374151]">Link rastreável</div>
+            <button
+              onClick={() => product && makeSubLink(product.url, platform, product, setBusyLink, setTrackedUrl, setErrMsg)}
+              disabled={busyLink}
+              className={cx(
+                'inline-flex items-center gap-1.5 rounded-md text-xs px-3 py-1.5 border',
+                'border-[#FFD9CF] bg-white hover:bg-[#FFF4F0] text-[#1F2937]',
+                busyLink && 'opacity-60 cursor-not-allowed'
+              )}
+              title="Recalcular SubIDs"
+            >
+              {busyLink ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              {busyLink ? 'Gerando…' : 'Atualizar link'}
+            </button>
           </div>
 
           {/* Ações de geração */}
@@ -424,7 +466,7 @@ export default function ComposerDrawer({
             }
           />
 
-          {/* Info de link (sem campo visível de subID) */}
+          {/* Info de link */}
           <div className="flex items-center justify-between text-[11px] text-[#6B7280]">
             <span>{busyLink ? 'Gerando link com SubIDs…' : trackedUrl ? 'Link com SubIDs pronto.' : 'Sem link ainda.'}</span>
             {trackedUrl ? <CopyButton text={trackedUrl} label="Copiar link" /> : null}
