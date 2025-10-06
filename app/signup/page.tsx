@@ -23,7 +23,6 @@ export default function SignupPage() {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "Erro no cadastro");
-      // já cria sessão -> redireciona
       router.push("/dashboard/shopee");
     } catch (e: any) {
       setErr(e?.message || "Falha ao cadastrar");
@@ -40,61 +39,31 @@ export default function SignupPage() {
       </p>
 
       {err && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {err}
-        </div>
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>
       )}
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <div className="space-y-1">
           <label className="text-sm font-medium">Nome</label>
-          <input
-            className="w-full"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Seu nome"
-            required
-          />
+          <input className="w-full" value={name} onChange={e=>setName(e.target.value)} placeholder="Seu nome" required />
         </div>
 
         <div className="space-y-1">
           <label className="text-sm font-medium">E-mail</label>
-          <input
-            type="email"
-            className="w-full"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="voce@exemplo.com"
-            required
-          />
+          <input type="email" className="w-full" value={email} onChange={e=>setEmail(e.target.value)} placeholder="voce@exemplo.com" required />
         </div>
 
         <div className="space-y-1">
           <label className="text-sm font-medium">Senha</label>
-          <input
-            type="password"
-            className="w-full"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Mínimo 6 caracteres"
-            minLength={6}
-            required
-          />
+          <input type="password" className="w-full" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" minLength={6} required />
         </div>
 
-        <button
-          type="submit"
-          disabled={busy}
-          className="btn btn-primary w-full"
-        >
+        <button type="submit" disabled={busy} className="btn btn-primary w-full">
           {busy ? "Enviando..." : "Criar conta"}
         </button>
 
         <p className="text-center text-sm text-gray-600">
-          Já tem conta?{" "}
-          <a href="/login" className="underline underline-offset-2">
-            Entrar
-          </a>
+          Já tem conta? <a href="/login" className="underline underline-offset-2">Entrar</a>
         </p>
       </form>
     </main>
