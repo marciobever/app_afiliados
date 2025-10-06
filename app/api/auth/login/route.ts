@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import { createHash } from "crypto";
 import { createSessionCookie } from "@/lib/auth";
 
-/** UUID determinístico a partir de string (usado só para fallback/ADM) */
+/** UUID determinístico (usado só como fallback em dev/admin) */
 function uuidFromString(input: string): string {
   const hex = createHash("sha256").update(input).digest("hex");
   const s = hex.slice(0, 32).split("");
@@ -16,16 +16,16 @@ function uuidFromString(input: string): string {
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const ADMIN_EMAIL   = process.env.ADMIN_EMAIL?.toLowerCase();
-const ADMIN_USER_ID = process.env.ADMIN_USER_ID;
-const ADMIN_ORG_ID  = process.env.ADMIN_ORG_ID;
-
-// Fallback só para cenários específicos (ex.: modo dev sem admin configurado)
+const ADMIN_EMAIL    = process.env.ADMIN_EMAIL?.toLowerCase();
+const ADMIN_USER_ID  = process.env.ADMIN_USER_ID;
+const ADMIN_ORG_ID   = process.env.ADMIN_ORG_ID;
+// (Somente fallback dev – não usamos em user normal agora)
 const DEFAULT_ORG_ID = process.env.DEFAULT_ORG_ID || uuidFromString("default");
 
 export async function POST(req: NextRequest) {
   try {
-    const ctype = req.headers.get("content-type") || "";
+    // --- parse body seguro (json / form / fallback) ---
+    const ctype = (req.headers.get("content-type") || "").toLowerCase();
     let body: Record<string, any> = {};
 
     if (ctype.includes("application/json")) {
@@ -34,16 +34,21 @@ export async function POST(req: NextRequest) {
       const form = await req.formData();
       body = Object.fromEntries(form.entries());
     } else {
+      // tenta json como fallback
       body = await req.json().catch(() => ({}));
     }
 
-    const email = String(body.email || "").trim().toLowerCase();
-    const password = String(body.password || "");
+    const email = String(body.email ?? "").trim().toLowerCase();
+    const password = String(body.password ?? "");
 
-    if (!email)    return NextResponse.json({ error: "E-mail é obrigatório" }, { status: 400 });
-    if (!password) return NextResponse.json({ error: "Senha é obrigatória" }, { status: 400 });
+    if (!email) {
+      return NextResponse.json({ error: "E-mail é obrigatório" }, { status: 400 });
+    }
+    if (!password) {
+      return NextResponse.json({ error: "Senha é obrigatória" }, { status: 400 });
+    }
 
-    // ---- Atalho ADMIN (se definido) ----
+    // --- atalho ADMIN (se definido via env) ---
     const isAdmin =
       !!ADMIN_EMAIL &&
       !!ADMIN_USER_ID &&
@@ -51,25 +56,31 @@ export async function POST(req: NextRequest) {
       UUID_RX.test(ADMIN_USER_ID);
 
     if (isAdmin) {
-      // Para admin, usa ADMIN_ORG_ID (se houver), senão defaulta a própria do admin
+      // Para admin, org = ADMIN_ORG_ID (se válida) senão o próprio ADMIN_USER_ID
       const adminOrg =
         (ADMIN_ORG_ID && UUID_RX.test(ADMIN_ORG_ID) && ADMIN_ORG_ID) ||
         ADMIN_USER_ID;
 
-      const res = NextResponse.json({ ok: true, userId: ADMIN_USER_ID, orgId: adminOrg });
+      const res = NextResponse.json({
+        ok: true,
+        userId: ADMIN_USER_ID,
+        orgId: adminOrg,
+        email,
+        isAdmin: true,
+      });
       createSessionCookie(res as any, { userId: ADMIN_USER_ID!, orgId: adminOrg! });
       return res;
     }
 
-    // ---- Busca usuário normal ----
+    // --- login de usuário "normal" (tabela app_users) ---
     const { data: user, error } = await supabaseAdmin
       .from("app_users")
-      .select("id, password_hash, is_active")
+      .select("id, email, name, password_hash, is_active")
       .eq("email", email)
       .maybeSingle();
 
     if (error) {
-      // Logar error.message no servidor se quiser
+      // (opcional: log no servidor)
       return NextResponse.json({ error: "Erro ao buscar usuário." }, { status: 500 });
     }
     if (!user) {
@@ -79,14 +90,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Conta desativada." }, { status: 403 });
     }
 
-    const hash: string = user.password_hash || "";
+    const hash = String(user.password_hash ?? "");
     const ok = hash && (await bcrypt.compare(password, hash));
-    if (!ok) return NextResponse.json({ error: "Credenciais inválidas." }, { status: 401 });
+    if (!ok) {
+      return NextResponse.json({ error: "Credenciais inválidas." }, { status: 401 });
+    }
 
-    // ✅ ORG DO USUÁRIO = O PRÓPRIO user.id (cada usuário na sua org por padrão)
-    const userOrgId = user.id as string;
+    // ✅ Multi-tenant simples: orgId = próprio user.id
+    const userOrgId = String(user.id);
 
-    const res = NextResponse.json({ ok: true, userId: user.id, orgId: userOrgId });
+    const res = NextResponse.json({
+      ok: true,
+      userId: user.id,
+      orgId: userOrgId,
+      email: user.email,
+      name: user.name ?? null,
+    });
+
     createSessionCookie(res as any, { userId: user.id, orgId: userOrgId });
     return res;
   } catch (e: any) {
