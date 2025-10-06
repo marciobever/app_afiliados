@@ -11,39 +11,29 @@ function slugify(s: string) {
 }
 
 type OrgLite = { id: string; name: string; slug: string };
+type Role = "owner" | "admin" | "member" | "viewer";
 
-type OrgUsersRow = {
-  org_id: string;
-  role: "owner" | "admin" | "member" | "viewer";
-  // Supabase pode retornar o relacionamento como objeto OU array de 1
-  orgs?: OrgLite | OrgLite[];
-};
-
-/**
- * Retorna a org principal do usuário. Se não existir, cria uma org "Pessoal"
- * e vincula o usuário como owner (idempotente).
- */
 export async function getOrCreatePrimaryOrg(userId: string, email?: string) {
   const sb = supabaseAdmin().schema("Produto_Afiliado");
 
   // 1) tenta achar org já vinculada ao usuário (org_users)
-  const { data: found, error: e1 } = await sb
+  const q = await sb
     .from("org_users")
-    .select<
-      OrgUsersRow
-    >(`
+    .select(
+      `
       org_id,
       role,
       orgs:orgs!inner ( id, name, slug )
-    `)
+    `
+    )
     .eq("user_id", userId)
     .limit(1)
     .maybeSingle();
 
-  if (e1) throw new Error(e1.message);
+  if (q.error) throw new Error(q.error.message);
 
-  // Tratar orgs como objeto OU array
-  const orgField = (found as OrgUsersRow | null | undefined)?.orgs;
+  // orgs pode vir como objeto OU array; tratar ambos os casos
+  const orgField = (q.data as any)?.orgs as OrgLite | OrgLite[] | undefined;
   const org: OrgLite | undefined = Array.isArray(orgField) ? orgField[0] : orgField;
 
   if (org?.id) {
@@ -67,7 +57,7 @@ export async function getOrCreatePrimaryOrg(userId: string, email?: string) {
   const { error: e3 } = await sb
     .from("org_users")
     .upsert(
-      { org_id: newOrg.id, user_id: userId, role: "owner" },
+      { org_id: newOrg.id, user_id: userId, role: "owner" as Role },
       { onConflict: "org_id,user_id" }
     );
   if (e3) throw new Error(e3.message);
