@@ -1,5 +1,10 @@
-// lib/orgs.ts
+// app/api/orgs/route.ts
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+import { NextRequest, NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { getUserContext } from "@/lib/auth";
 
 function slugify(s: string) {
   return s
@@ -10,75 +15,110 @@ function slugify(s: string) {
     .replace(/(^-|-$)/g, "");
 }
 
-type OrgLite = { id: string; name: string; slug: string };
-type Role = "owner" | "admin" | "member" | "viewer";
-
 const MISSING_TABLE_RX =
   /(schema cache)|(does not exist)|relation .* does not exist|not find the table/i;
 
-export async function getOrCreatePrimaryOrg(userId: string, email?: string) {
+/**
+ * GET /api/orgs
+ * Lista organizações do usuário a partir de org_members → orgs (embed).
+ * Requer FK org_members.org_id -> orgs.id no Supabase.
+ */
+export async function GET() {
+  const { userId } = getUserContext();
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const sb = supabaseAdmin().schema("Produto_Afiliado");
 
-  // 1) tenta achar org já vinculada ao usuário
-  const q = await sb
-    .from("org_users")
-    .select(
-      `
-      org_id,
+  const sel = await sb
+    .from("org_members")
+    .select(`
       role,
-      orgs:orgs!inner ( id, name, slug )
-    `
-    )
-    .eq("user_id", userId)
-    .limit(1)
-    .maybeSingle();
+      orgs!inner ( id, name, slug )
+    `)
+    .eq("user_id", userId);
 
-  if (q.error) {
-    if (MISSING_TABLE_RX.test(q.error.message || "")) {
-      // schema/tabelas ainda não expostos → não trava
-      return { orgId: userId, org: null, fallback: true as const };
+  if (sel.error) {
+    if (MISSING_TABLE_RX.test(sel.error.message || "")) {
+      return NextResponse.json({ orgs: [], fallback: true });
     }
-    throw new Error(q.error.message);
+    return NextResponse.json({ error: sel.error.message }, { status: 500 });
   }
 
-  const orgField = (q.data as any)?.orgs as OrgLite | OrgLite[] | undefined;
-  const org: OrgLite | undefined = Array.isArray(orgField) ? orgField[0] : orgField;
+  const orgs = (sel.data ?? []).map((r: any) => ({
+    id: r.orgs?.id,
+    name: r.orgs?.name,
+    slug: r.orgs?.slug,
+    role: r.role,
+  }));
 
-  if (org?.id) {
-    return { orgId: org.id, org, fallback: false as const };
+  return NextResponse.json({ orgs });
+}
+
+/**
+ * POST /api/orgs
+ * Cria uma org e vincula o usuário atual como owner em org_members.
+ * body: { name?: string; slug?: string }
+ */
+export async function POST(req: NextRequest) {
+  const { userId } = getUserContext();
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const body = await req.json().catch(() => ({} as any));
+  let name = String(body?.name ?? "").trim();
+  let slugInput = String(body?.slug ?? "").trim();
+
+  if (!name && !slugInput) {
+    return NextResponse.json({ error: "name_or_slug_required" }, { status: 400 });
   }
 
-  // 2) não existe -> cria uma org "Pessoal" para o usuário
-  const base = (email?.split("@")[0] || "workspace").slice(0, 32);
-  const name = `${base} (Pessoal)`;
-  const slug = slugify(`${base}-${Math.random().toString(36).slice(2, 6)}`);
+  if (!name) name = slugInput;
+  let baseSlug = slugify(slugInput || name) || "workspace";
 
-  const ins = await sb
-    .from("orgs")
-    .insert({ name, slug, created_by: userId })
-    .select("id, name, slug")
-    .single();
+  const sb = supabaseAdmin().schema("Produto_Afiliado");
 
-  if (ins.error) {
+  // Garante slug único com algumas tentativas
+  let created: any = null;
+  let lastErr: string | null = null;
+  for (let i = 0; i < 3 && !created; i++) {
+    const trySlug =
+      i === 0 ? baseSlug : `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`;
+
+    const ins = await sb
+      .from("orgs")
+      .insert({ name, slug: trySlug, created_by: userId })
+      .select("id, name, slug")
+      .single();
+
+    if (!ins.error) {
+      created = ins.data;
+      break;
+    }
+
     if (MISSING_TABLE_RX.test(ins.error.message || "")) {
-      return { orgId: userId, org: null, fallback: true as const };
+      return NextResponse.json(
+        { error: "schema_unavailable", message: ins.error.message, fallback: true },
+        { status: 503 }
+      );
     }
-    throw new Error(ins.error.message);
+
+    lastErr = ins.error.message;
   }
 
-  const newOrg = ins.data as OrgLite;
+  if (!created) {
+    return NextResponse.json({ error: "create_failed", message: lastErr }, { status: 500 });
+  }
 
-  // 3) vincula como owner (idempotente)
+  // Vincula criador como owner (idempotente)
   const up = await sb
-    .from("org_users")
+    .from("org_members")
     .upsert(
-      { org_id: newOrg.id, user_id: userId, role: "owner" as Role },
+      { org_id: created.id, user_id: userId, role: "owner" },
       { onConflict: "org_id,user_id" }
     );
 
   if (up.error && !MISSING_TABLE_RX.test(up.error.message || "")) {
-    throw new Error(up.error.message);
+    return NextResponse.json({ error: up.error.message }, { status: 500 });
   }
 
-  return { orgId: newOrg.id, org: newOrg, fallback: false as const };
+  return NextResponse.json({ ok: true, org: created });
 }
