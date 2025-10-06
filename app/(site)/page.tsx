@@ -1,22 +1,20 @@
 // app/(site)/page.tsx
 import Link from "next/link";
 import Hero from "@/components/Hero";
+import Newsletter from "@/components/Newsletter";
 
 export const dynamic = "force-dynamic";
 
 export default function LandingPage() {
   return (
     <main className="min-h-screen">
-      {/* HERO separado em componente */}
       <Hero />
 
       <div className="mx-auto max-w-7xl px-6 space-y-24 py-16">
         {/* COMO FUNCIONA */}
         <section id="como-funciona">
           <h2 className="text-2xl md:text-3xl font-bold">Como funciona</h2>
-          <p className="mt-2 text-gray-600">
-            Do produto ao post final, em 3 passos.
-          </p>
+          <p className="mt-2 text-gray-600">Do produto ao post final, em 3 passos.</p>
 
           <div className="mt-8 grid md:grid-cols-3 gap-6">
             {[
@@ -26,7 +24,7 @@ export default function LandingPage() {
               },
               {
                 t: "2) Gere legenda e link",
-                d: "A IA cria uma legenda pronta para IG/FB e o sistema monta um shortlink rastreável com SubIDs.",
+                d: "A IA cria uma legenda pronta, e o sistema gera um shortlink com UTM e SubIDs para rastrear por canal.",
               },
               {
                 t: "3) Publique",
@@ -49,11 +47,11 @@ export default function LandingPage() {
           <div className="mt-8 grid md:grid-cols-3 gap-6">
             {[
               { t: "Legendas com IA", d: "Textos otimizados para engajamento e conversão em IG/FB." },
-              { t: "SubIDs automáticos", d: "Links rastreáveis por canal/campanha para comparar performance." },
-              { t: "Múltiplos marketplaces", d: "Shopee, Amazon, Mercado Livre, AliExpress e Temu." },
+              { t: "UTM + SubIDs", d: "Rastreie por plataforma, campanha e variação com facilidade." },
+              { t: "Multi-marketplaces", d: "Shopee, Amazon, Mercado Livre, AliExpress e Temu." },
               { t: "Agendamento", d: "Defina data e hora para cada publicação sem complicação." },
               { t: "Estatísticas simples", d: "Acompanhe CTR e cliques por produto e por canal." },
-              { t: "Workspace colaborativo", d: "Trabalhe com equipe e diferentes contas com segurança." },
+              { t: "Workspace colaborativo", d: "Equipe e múltiplas contas com segurança." },
             ].map((f, i) => (
               <div key={i} className="card">
                 <div className="card-body">
@@ -84,7 +82,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* CTA FINAL */}
+        {/* CTA + Newsletter */}
         <section className="text-center">
           <h3 className="text-2xl md:text-3xl font-bold">
             Pronto para acelerar suas comissões?
@@ -93,49 +91,13 @@ export default function LandingPage() {
             Crie sua conta, conecte seus canais e publique hoje mesmo.
           </p>
           <div className="mt-6 flex items-center justify-center gap-3">
-            <Link
-              href="/signup"
-              className="btn btn-primary"
-            >
-              Criar conta grátis
-            </Link>
-            <Link
-              href="/login"
-              className="btn btn-ghost"
-            >
-              Entrar
-            </Link>
+            <Link href="/signup" className="btn btn-primary">Criar conta grátis</Link>
+            <Link href="/login" className="btn btn-ghost">Entrar</Link>
           </div>
-        </section>
 
-        {/* FOOTER SIMPLES */}
-        <footer className="border-t pt-10 text-sm text-gray-600">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[#EE4D2D] text-white text-xs font-bold">
-                SR
-              </span>
-              <span>SeuReview</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <Link href="/terms" className="hover:text-gray-800">
-                Termos
-              </Link>
-              <Link href="/privacy" className="hover:text-gray-800">
-                Privacidade
-              </Link>
-              <a
-                href="mailto:suporte@seureview.com.br"
-                className="hover:text-gray-800"
-              >
-                Suporte
-              </a>
-            </div>
-          </div>
-          <p className="mt-4 text-xs text-gray-400">
-            © {new Date().getFullYear()} SeuReview. Todos os direitos reservados.
-          </p>
-        </footer>
+          {/* Newsletter */}
+          <Newsletter />
+        </section>
       </div>
     </main>
   );
