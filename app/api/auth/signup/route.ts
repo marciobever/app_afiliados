@@ -1,55 +1,60 @@
+// app/api/auth/signup/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import supabaseAdmin from "@/lib/supabaseAdmin"; // <- seu default export
+import supabaseAdmin from "@/lib/supabaseAdmin";
 import bcrypt from "bcryptjs";
-import { createHash, randomUUID } from "crypto";
 import { createSessionCookie } from "@/lib/auth";
-
-function uuidFromString(input: string): string {
-  const hex = createHash("sha256").update(input).digest("hex");
-  const s = hex.slice(0, 32).split("");
-  s[12] = "4";
-  s[16] = ((parseInt(s[16], 16) & 0x3) | 0x8).toString(16);
-  return `${s.slice(0,8).join("")}-${s.slice(8,12).join("")}-${s.slice(12,16).join("")}-${s.slice(16,20).join("")}-${s.slice(20,32).join("")}`;
-}
-
-const DEFAULT_ORG_ID = process.env.DEFAULT_ORG_ID || uuidFromString("default");
+import { getOrCreatePrimaryOrg } from "@/lib/orgs";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const name = String(body.name || "").trim();
-    const email = String(body.email || "").trim().toLowerCase();
-    const password = String(body.password || "");
+    const email = String(body.email ?? "").trim().toLowerCase();
+    const name = String(body.name ?? "").trim();
+    const password = String(body.password ?? "");
 
-    if (!name)   return NextResponse.json({ error: "Nome é obrigatório." }, { status: 400 });
-    if (!email)  return NextResponse.json({ error: "E-mail é obrigatório." }, { status: 400 });
-    if (!password || password.length < 6) {
-      return NextResponse.json({ error: "Senha deve ter pelo menos 6 caracteres." }, { status: 400 });
+    if (!email || !password) {
+      return NextResponse.json({ error: "E-mail e senha obrigatórios" }, { status: 400 });
     }
 
+    const sb = supabaseAdmin().schema("Produto_Afiliado");
+
     // já existe?
-    const { data: exists, error: existsErr } = await supabaseAdmin
+    const { data: exists, error: existsErr } = await sb
       .from("app_users")
-      .select("id")
+      .select("id, is_active")
       .eq("email", email)
       .maybeSingle();
+    if (existsErr) throw existsErr;
+    if (exists) {
+      return NextResponse.json({ error: "E-mail já cadastrado" }, { status: 409 });
+    }
 
-    if (existsErr) return NextResponse.json({ error: "Erro ao verificar usuário." }, { status: 500 });
-    if (exists)    return NextResponse.json({ error: "E-mail já cadastrado." }, { status: 409 });
-
-    const userId = randomUUID();
     const password_hash = await bcrypt.hash(password, 10);
 
-    const { error: insertErr } = await supabaseAdmin
+    // cria usuário
+    const { data: user, error: uErr } = await sb
       .from("app_users")
-      .insert({ id: userId, email, name, password_hash, is_active: true });
+      .insert({ email, name: name || null, password_hash, is_active: true })
+      .select("id, email, name")
+      .single();
+    if (uErr) throw uErr;
 
-    if (insertErr) return NextResponse.json({ error: "Falha ao criar usuário." }, { status: 500 });
+    // cria/recupera org principal e vínculo (owner)
+    const { orgId, org } = await getOrCreatePrimaryOrg(user.id, user.email);
 
-    const res = NextResponse.json({ ok: true, userId, orgId: DEFAULT_ORG_ID });
-    createSessionCookie(res as any, { userId, orgId: DEFAULT_ORG_ID });
+    // emite sessão
+    const res = NextResponse.json({
+      ok: true,
+      userId: user.id,
+      orgId,
+      email: user.email,
+      name: user.name ?? null,
+      org,
+    });
+    createSessionCookie(res as any, { userId: user.id, orgId });
     return res;
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Erro no cadastro." }, { status: 400 });
+    console.error("[/api/auth/signup] error:", e?.message);
+    return NextResponse.json({ error: e?.message || "internal" }, { status: 500 });
   }
 }
