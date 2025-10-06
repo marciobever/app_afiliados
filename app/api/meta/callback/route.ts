@@ -1,10 +1,10 @@
+// app/api/meta/callback/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getUserContext } from "@/lib/auth";
 
-const META_APP_ID =
-  process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID || "";
+const META_APP_ID = process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID || "";
 const META_APP_SECRET = process.env.META_APP_SECRET || "";
 const META_REDIRECT_URI = process.env.META_REDIRECT_URI || "";
 const APP_SESSION_SECRET = process.env.APP_SESSION_SECRET || "dev-secret";
@@ -37,7 +37,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-se
     if (window.opener) { try { window.opener.postMessage({ meta_connected: true }, "*"); } catch {} }
   </script>
 </body></html>`;
-  return new NextResponse(page, { headers: { "content-type": "text/html; charset=utf-8" }});
+  return new NextResponse(page, { headers: { "content-type": "text/html; charset=utf-8" } });
 }
 
 function sign(payload: string) {
@@ -54,22 +54,21 @@ export async function GET(req: NextRequest) {
     if (error) return html("Conexão cancelada: " + error);
     if (!code || !state) return html("Parâmetros ausentes.");
 
-    // sessão obrigatória
     let userId: string;
     let orgId: string;
     try {
       const ctx = getUserContext();
-      userId = ctx.userId; // UUID
+      userId = ctx.userId;
       orgId = ctx.orgId;
     } catch {
-      return html("Sessão inválida. Faça login e tente conectar novamente.");
+      return html("Sessão inválida. Faça login e tente novamente.");
     }
 
     if (!META_APP_ID || !META_APP_SECRET || !META_REDIRECT_URI) {
       return html("Meta App mal configurado no servidor (.env).");
     }
 
-    // validação forte do state (assinado no /api/meta/login)
+    // valida state (anti-tampering)
     let okState = false;
     try {
       const wrapped = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
@@ -82,15 +81,15 @@ export async function GET(req: NextRequest) {
     } catch {}
     if (!okState) return html("State inválido para este usuário.");
 
-    // 1) code -> short-lived token
+    // 1) short-lived token
     const tokenRes = await fetch(
       `https://graph.facebook.com/v19.0/oauth/access_token?` +
-      new URLSearchParams({
-        client_id: META_APP_ID,
-        client_secret: META_APP_SECRET,
-        redirect_uri: META_REDIRECT_URI,
-        code,
-      }),
+        new URLSearchParams({
+          client_id: META_APP_ID,
+          client_secret: META_APP_SECRET,
+          redirect_uri: META_REDIRECT_URI,
+          code,
+        }),
       { method: "GET" }
     );
     const tokenJson = await tokenRes.json();
@@ -98,26 +97,26 @@ export async function GET(req: NextRequest) {
     const shortToken = tokenJson.access_token as string;
     const shortExpiresIn = tokenJson.expires_in as number | undefined;
 
-    // 2) debug_token -> meta user + scopes
+    // 2) debug_token
     const appAccessToken = `${META_APP_ID}|${META_APP_SECRET}`;
     const debugRes = await fetch(
       `https://graph.facebook.com/v19.0/debug_token?` +
-      new URLSearchParams({ input_token: shortToken, access_token: appAccessToken }),
+        new URLSearchParams({ input_token: shortToken, access_token: appAccessToken }),
       { method: "GET" }
     );
     const debugJson = (await debugRes.json()) as DebugTokenResp;
     const metaUserId = debugJson?.data?.user_id || null;
     const grantedScopes = debugJson?.data?.scopes || [];
 
-    // 3) short -> long-lived
+    // 3) long-lived
     const longRes = await fetch(
       `https://graph.facebook.com/v19.0/oauth/access_token?` +
-      new URLSearchParams({
-        grant_type: "fb_exchange_token",
-        client_id: META_APP_ID,
-        client_secret: META_APP_SECRET,
-        fb_exchange_token: shortToken,
-      }),
+        new URLSearchParams({
+          grant_type: "fb_exchange_token",
+          client_id: META_APP_ID,
+          client_secret: META_APP_SECRET,
+          fb_exchange_token: shortToken,
+        }),
       { method: "GET" }
     );
     const longJson = await longRes.json();
@@ -128,13 +127,13 @@ export async function GET(req: NextRequest) {
         ? (longJson.expires_in as number)
         : shortExpiresIn ?? null;
 
-    // 4) buscar conta Instagram Business vinculada
+    // 4) buscar páginas + IG vinculado (primeira ocorrência)
     let instagramBusinessId: string | null = null;
     let instagramUsername: string | null = null;
 
     try {
       const pagesRes = await fetch(
-        `https://graph.facebook.com/me/accounts?fields=instagram_business_account{id,username}&access_token=${longToken}`,
+        `https://graph.facebook.com/v19.0/me/accounts?fields=instagram_business_account{id,username}&access_token=${longToken}`,
         { method: "GET" }
       );
       const pagesJson = await pagesRes.json();
@@ -147,8 +146,8 @@ export async function GET(req: NextRequest) {
       console.warn("Falha ao buscar Instagram business ID:", err);
     }
 
-    // 5) upsert no Supabase
-    const sb = supabaseAdmin();
+    // 5) upsert no Supabase (schema Produto_Afiliado)
+    const sb = supabaseAdmin().schema("Produto_Afiliado");
     const payload = {
       user_id: userId,
       org_id: orgId,
@@ -160,6 +159,7 @@ export async function GET(req: NextRequest) {
       expires_in: longExpiresIn,
       instagram_business_id: instagramBusinessId,
       instagram_username: instagramUsername,
+      updated_at: new Date().toISOString(),
     };
 
     const { error: upsertErr } = await sb
@@ -170,9 +170,7 @@ export async function GET(req: NextRequest) {
 
     return html(
       `✅ Conexão com Meta concluída!<br/>` +
-        (instagramUsername
-          ? `Instagram conectado: <b>@${instagramUsername}</b><br/>`
-          : "") +
+        (instagramUsername ? `Instagram conectado: <b>@${instagramUsername}</b><br/>` : "") +
         `Você já pode fechar esta janela.`
     );
   } catch (e: any) {
