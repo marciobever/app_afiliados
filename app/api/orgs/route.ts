@@ -1,74 +1,84 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { getUserContext } from "@/lib/auth";
+// lib/orgs.ts
+import supabaseAdmin from "@/lib/supabaseAdmin";
 
-export async function GET(_req: NextRequest) {
-  // pega usuário da sessão (cookies)
-  const { userId } = getUserContext();
-
-  const sb = supabaseAdmin().schema("Produto_Afiliado");
-
-  // Supondo FK org_members.org_id -> orgs.id
-  // Ajuste o select conforme seus relacionamentos cadastrados no Supabase
-  const { data, error } = await sb
-    .from("org_members")
-    .select(`
-      org_id,
-      role,
-      orgs (
-        id,
-        name,
-        slug
-      )
-    `)
-    .eq("user_id", userId);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  const orgs = (data || []).map((r: any) => ({
-    id: r.orgs?.id,
-    name: r.orgs?.name,
-    slug: r.orgs?.slug,
-    role: r.role,
-  }));
-
-  return NextResponse.json({ orgs });
+function slugify(s: string) {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 }
 
-export async function POST(req: NextRequest) {
-  const { userId } = getUserContext();
-  const { name, slug } = await req.json().catch(() => ({} as any));
+type OrgLite = { id: string; name: string; slug: string };
+type Role = "owner" | "admin" | "member" | "viewer";
 
-  if (!name || !slug) {
-    return NextResponse.json(
-      { error: "name e slug são obrigatórios" },
-      { status: 400 }
-    );
-  }
+const MISSING_TABLE_RX =
+  /(schema cache)|(does not exist)|relation .* does not exist|not find the table/i;
 
+export async function getOrCreatePrimaryOrg(userId: string, email?: string) {
   const sb = supabaseAdmin().schema("Produto_Afiliado");
 
-  // cria org
-  const { data: org, error: e1 } = await sb
+  // 1) tenta achar org já vinculada ao usuário
+  const q = await sb
+    .from("org_users")
+    .select(
+      `
+      org_id,
+      role,
+      orgs:orgs!inner ( id, name, slug )
+    `
+    )
+    .eq("user_id", userId)
+    .limit(1)
+    .maybeSingle();
+
+  if (q.error) {
+    if (MISSING_TABLE_RX.test(q.error.message || "")) {
+      // schema/tabelas ainda não expostos → não trava
+      return { orgId: userId, org: null, fallback: true as const };
+    }
+    throw new Error(q.error.message);
+  }
+
+  const orgField = (q.data as any)?.orgs as OrgLite | OrgLite[] | undefined;
+  const org: OrgLite | undefined = Array.isArray(orgField) ? orgField[0] : orgField;
+
+  if (org?.id) {
+    return { orgId: org.id, org, fallback: false as const };
+  }
+
+  // 2) não existe -> cria uma org "Pessoal" para o usuário
+  const base = (email?.split("@")[0] || "workspace").slice(0, 32);
+  const name = `${base} (Pessoal)`;
+  const slug = slugify(`${base}-${Math.random().toString(36).slice(2, 6)}`);
+
+  const ins = await sb
     .from("orgs")
-    .insert({ name, slug })
-    .select("*")
+    .insert({ name, slug, created_by: userId })
+    .select("id, name, slug")
     .single();
 
-  if (e1) {
-    return NextResponse.json({ error: e1.message }, { status: 500 });
+  if (ins.error) {
+    if (MISSING_TABLE_RX.test(ins.error.message || "")) {
+      return { orgId: userId, org: null, fallback: true as const };
+    }
+    throw new Error(ins.error.message);
   }
 
-  // adiciona o criador como owner
-  const { error: e2 } = await sb
-    .from("org_members")
-    .insert({ org_id: org.id, user_id: userId, role: "owner" });
+  const newOrg = ins.data as OrgLite;
 
-  if (e2) {
-    return NextResponse.json({ error: e2.message }, { status: 500 });
+  // 3) vincula como owner (idempotente)
+  const up = await sb
+    .from("org_users")
+    .upsert(
+      { org_id: newOrg.id, user_id: userId, role: "owner" as Role },
+      { onConflict: "org_id,user_id" }
+    );
+
+  if (up.error && !MISSING_TABLE_RX.test(up.error.message || "")) {
+    throw new Error(up.error.message);
   }
 
-  return NextResponse.json({ org });
+  return { orgId: newOrg.id, org: newOrg, fallback: false as const };
 }
