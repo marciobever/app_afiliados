@@ -1,66 +1,51 @@
 // lib/orgs.ts
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+'use server';
 
-function slugify(s: string) {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+import supabaseAdmin from '@/lib/supabaseAdmin';
+import { createHash } from 'crypto';
+
+function uuidFromString(input: string): string {
+  const hex = createHash('sha256').update(input).digest('hex');
+  const s = hex.slice(0, 32).split('');
+  s[12] = '4';
+  s[16] = ((parseInt(s[16], 16) & 0x3) | 0x8).toString(16);
+  return `${s.slice(0,8).join('')}-${s.slice(8,12).join('')}-${s.slice(12,16).join('')}-${s.slice(16,20).join('')}-${s.slice(20,32).join('')}`;
 }
 
-type OrgLite = { id: string; name: string; slug: string };
-type Role = "owner" | "admin" | "member" | "viewer";
+const MISSING_TABLE_RX = /(schema cache)|(does not exist)|relation .* does not exist|not find the table/i;
 
 export async function getOrCreatePrimaryOrg(userId: string, email?: string) {
-  const sb = supabaseAdmin().schema("Produto_Afiliado");
+  const sb = supabaseAdmin().schema('Produto_Afiliado');
 
-  // 1) tenta achar org já vinculada ao usuário (org_users)
-  const q = await sb
-    .from("org_users")
-    .select(
-      `
-      org_id,
-      role,
-      orgs:orgs!inner ( id, name, slug )
-    `
-    )
-    .eq("user_id", userId)
-    .limit(1)
-    .maybeSingle();
+  try {
+    // tenta pegar um vínculo existente
+    const { data, error } = await sb
+      .from('org_members')
+      .select('org_id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-  if (q.error) throw new Error(q.error.message);
+    if (error) {
+      if (MISSING_TABLE_RX.test(error.message || '')) {
+        // schema/tabela não exposta → fallback silencioso
+        const fallbackOrgId = userId || uuidFromString(email || 'default');
+        return { orgId: fallbackOrgId, org: null, fallback: true as const };
+      }
+      throw error;
+    }
 
-  // orgs pode vir como objeto OU array; tratar ambos os casos
-  const orgField = (q.data as any)?.orgs as OrgLite | OrgLite[] | undefined;
-  const org: OrgLite | undefined = Array.isArray(orgField) ? orgField[0] : orgField;
+    if (data?.org_id) {
+      return { orgId: String(data.org_id), org: null, fallback: false as const };
+    }
 
-  if (org?.id) {
-    return { orgId: org.id, org };
+    // não há membership → fallback simples usando o próprio userId
+    const fallbackOrgId = userId || uuidFromString(email || 'default');
+    return { orgId: fallbackOrgId, org: null, fallback: true as const };
+  } catch (e: any) {
+    // qualquer erro inesperado → ainda assim não travar o login
+    const fallbackOrgId = userId || uuidFromString(email || 'default');
+    return { orgId: fallbackOrgId, org: null, fallback: true as const, error: e?.message };
   }
-
-  // 2) não existe -> cria uma org "Pessoal" para o usuário
-  const base = (email?.split("@")[0] || "workspace").slice(0, 32);
-  const suffix = Math.random().toString(36).slice(2, 6);
-  const name = `${base} (Pessoal)`;
-  const slug = slugify(`${base}-${suffix}`);
-
-  const { data: newOrg, error: e2 } = await sb
-    .from("orgs")
-    .insert({ name, slug, created_by: userId })
-    .select("*")
-    .single();
-  if (e2) throw new Error(e2.message);
-
-  // 3) vincula como owner (idempotente)
-  const { error: e3 } = await sb
-    .from("org_users")
-    .upsert(
-      { org_id: newOrg.id, user_id: userId, role: "owner" as Role },
-      { onConflict: "org_id,user_id" }
-    );
-  if (e3) throw new Error(e3.message);
-
-  return { orgId: newOrg.id as string, org: newOrg as OrgLite };
 }
