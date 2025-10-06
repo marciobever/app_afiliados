@@ -12,6 +12,7 @@ const PUBLIC_API = [
   "/api/dev/login",
   "/api/dev/seed-owner",
   "/api/health",
+  "/api/dev/env-check",
 ];
 
 // Páginas públicas (visíveis sem login)
