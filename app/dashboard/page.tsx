@@ -7,19 +7,20 @@ import { PLATFORMS } from "@/components/brands";
 
 export default function DashboardHome() {
   return (
-    <div className="max-w-6xl mx-auto px-4 pb-12">
-      {/* faixa suave atrás (radial) */}
-      <div className="-mx-4 mb-6">
-        <div className="h-20 w-full bg-[radial-gradient(80%_120%_at_0%_0%,#FFF4F0,transparent_70%)]" />
-      </div>
+    <div className="relative max-w-6xl mx-auto px-4 pb-12">
+      {/* pano de fundo leve, fixo (nada de translate/blur) */}
+      <div
+        aria-hidden
+        className="pointer-events-none select-none absolute inset-x-0 -top-8 h-28 -z-10"
+        style={{
+          background:
+            "radial-gradient(80% 120% at 0% 0%, #FFF4F0 0%, transparent 70%)",
+        }}
+      />
 
       <SectionHeader
         emoji="🧭"
-        title={
-          <>
-            Escolha a plataforma
-          </>
-        }
+        title="Escolha a plataforma"
         subtitle="Conecte e gerencie conteúdos de cada marketplace/rede."
       />
 
