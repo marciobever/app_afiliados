@@ -5,8 +5,7 @@ import { useEffect, useState } from "react";
 
 type Props = { initialLoggedIn?: boolean };
 
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL || "https://seureview.com.br";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://seureview.com.br";
 
 export default function Header({ initialLoggedIn = false }: Props) {
   const [open, setOpen] = useState(false);
@@ -34,7 +33,7 @@ export default function Header({ initialLoggedIn = false }: Props) {
     window.location.href = "/login";
   }
 
-  const homeHref = loggedIn ? "/dashboard/shopee" : "/login";
+  const homeHref = loggedIn ? "/dashboard" : "/login";
 
   return (
     <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b">
@@ -48,17 +47,12 @@ export default function Header({ initialLoggedIn = false }: Props) {
           </Link>
 
           <div className="hidden sm:flex items-center gap-2">
-            <a
-              href={SITE_URL}
-              target="_blank"
-              rel="noopener"
-              className="btn btn-ghost"
-            >
+            <a href={SITE_URL} target="_blank" rel="noopener" className="btn btn-ghost">
               Voltar ao site
             </a>
             {loggedIn ? (
               <>
-                <Link href="/dashboard/shopee" className="btn btn-ghost">Painel</Link>
+                <Link href="/dashboard" className="btn btn-ghost">Painel</Link>
                 <button onClick={logout} className="btn btn-primary">Sair</button>
               </>
             ) : (
@@ -78,7 +72,6 @@ export default function Header({ initialLoggedIn = false }: Props) {
           </button>
         </div>
 
-        {/* Mobile */}
         {open && (
           <div className="sm:hidden mt-3 border-t pt-3 space-y-2">
             <a
@@ -93,7 +86,7 @@ export default function Header({ initialLoggedIn = false }: Props) {
             {loggedIn ? (
               <>
                 <Link
-                  href="/dashboard/shopee"
+                  href="/dashboard"
                   className="btn btn-ghost w-full"
                   onClick={() => setOpen(false)}
                 >
