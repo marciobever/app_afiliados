@@ -20,10 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR">
       <body className={`${inter.className} bg-white text-gray-900 antialiased`}>
         <Header initialLoggedIn={hasSession} />
-
-        <main className="min-h-[70vh] mx-auto max-w-7xl px-4 py-8 bg-gradient-to-b from-white to-[#fff7f5] rounded-2xl">
-          {children}
-        </main>
+        <main>{children}</main>
 
         <footer className="border-t mt-10">
           <div className="mx-auto max-w-7xl px-4 py-8 text-sm text-gray-600">
