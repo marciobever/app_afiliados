@@ -12,10 +12,19 @@ type ApiItem = {
   rating: number;
   image: string;
   url: string;
-  commissionPercent?: number; // ex.: 12 -> 12%
-  commissionAmount?: number;  // ex.: 8.9 -> R$
-  salesCount?: number;        // ex.: 1543
+  commissionPercent?: number; // ex: 12 (=> 12%)
+  commissionAmount?: number;  // ex: 8.9 (R$)
+  salesCount?: number;        // ex: 1543
 };
+
+type SortKey =
+  | 'relevance'
+  | 'commission_amount'
+  | 'commission_percent'
+  | 'sales'
+  | 'rating'
+  | 'price_asc'
+  | 'price_desc';
 
 function formatPrice(n?: number) {
   const v = Number(n ?? 0);
@@ -25,8 +34,16 @@ function formatPercent(n?: number) {
   const v = Number(n ?? 0);
   return `${v.toFixed(0)}%`;
 }
+function deriveCommission(price: number, percent?: number, amount?: number) {
+  const p = Number(price || 0);
+  let pct = typeof percent === 'number' ? percent : undefined;
+  let amt = typeof amount === 'number' ? amount : undefined;
+  if (pct == null && amt != null && p > 0) pct = (amt / p) * 100;
+  if (amt == null && pct != null && p > 0) amt = (pct / 100) * p;
+  return { pct: pct != null ? Number(pct) : undefined, amt: amt != null ? Number(amt) : undefined };
+}
 
-/** Card de produto padronizado */
+/** Card de produto */
 function ProductCard({
   product,
   selected,
@@ -36,17 +53,6 @@ function ProductCard({
   selected?: boolean;
   onSelectAndCompose: () => void;
 }) {
-  // monta o texto da comissão (valor + % se ambos existirem)
-  const hasAmount = typeof product.commissionAmount === 'number';
-  const hasPercent = typeof product.commissionPercent === 'number';
-  const commissionText = hasAmount && hasPercent
-    ? `Comissão ${formatPrice(product.commissionAmount)} (${formatPercent(product.commissionPercent)})`
-    : hasAmount
-    ? `Comissão ${formatPrice(product.commissionAmount)}`
-    : hasPercent
-    ? `Comissão ${formatPercent(product.commissionPercent)}`
-    : '';
-
   return (
     <Card className="overflow-hidden">
       <div className="aspect-[4/3] bg-[#FFF9F7] border-b border-[#FFD9CF]">
@@ -76,19 +82,24 @@ function ProductCard({
 
           {/* badges: comissão + vendas */}
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            {commissionText && (
+            {typeof product.commissionAmount === 'number' ? (
               <Badge tone="success" className="inline-flex items-center gap-1">
                 <Percent className="w-3 h-3" />
-                {commissionText}
+                Comissão {formatPrice(product.commissionAmount)}
               </Badge>
-            )}
+            ) : typeof product.commissionPercent === 'number' ? (
+              <Badge tone="success" className="inline-flex items-center gap-1">
+                <Percent className="w-3 h-3" />
+                Comissão {formatPercent(product.commissionPercent)}
+              </Badge>
+            ) : null}
 
-            {typeof product.salesCount === 'number' && (
+            {typeof product.salesCount === 'number' ? (
               <Badge className="inline-flex items-center gap-1">
                 <TrendingUp className="w-3 h-3" />
                 {product.salesCount.toLocaleString('pt-BR')} vendas
               </Badge>
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -121,6 +132,11 @@ export default function Products({
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
 
+  // novos filtros/ordenação
+  const [sortKey, setSortKey] = React.useState<SortKey>('relevance');
+  const [minCommissionPct, setMinCommissionPct] = React.useState<number>(0);
+  const [minSales, setMinSales] = React.useState<number>(0);
+
   const [composerOpen, setComposerOpen] = React.useState(false);
   const [composerProduct, setComposerProduct] = React.useState<ApiItem | null>(null);
 
@@ -139,57 +155,26 @@ export default function Products({
         }),
       });
       if (!res.ok) throw new Error(await res.text());
+
       const data = await res.json();
 
-      // 🔧 Normalizador robusto: aceita camelCase e snake_case do n8n
+      // normalizador + derivação de comissão
       const list: ApiItem[] = (Array.isArray(data?.items) ? data.items : []).map((it: any) => {
-        // id (tenta product_uid, depois shop_id+item_id, depois id genérico)
-        const id =
-          it.id ??
-          it.product_uid ??
-          (it.shop_id != null && it.item_id != null ? `${it.shop_id}_${it.item_id}` : String(Math.random()));
-
-        const title = it.title ?? it.nome ?? it.name ?? '';
-        const price = Number(it.price ?? it.preco_min ?? it.preco ?? it.sale_price ?? it.price_min ?? 0);
-        const rating = Number(it.rating ?? it.avaliacao ?? it.item_rating?.rating_star ?? 0);
-
+        const id = it.id ?? it.itemid ?? it.itemId ?? String(Math.random());
+        const title = it.title ?? it.name ?? '';
+        const price = Number(it.price ?? it.sale_price ?? it.price_min ?? 0);
+        const rating = Number(it.rating ?? it.item_rating?.rating_star ?? 0);
         const image =
           it.image ??
-          it.image_url ??
           (Array.isArray(it.images) && it.images[0] ? it.images[0] : '') ??
           '';
+        const url = it.url ?? it.link ?? `https://shopee.com.br/product/${id}`;
 
-        const url = it.url ?? it.offer_link ?? it.product_link ?? `https://shopee.com.br/product/${id}`;
+        const commissionPercent = it.commissionPercent ?? it.max_commission_rate ?? it.commission_rate;
+        const commissionAmount  = it.commissionAmount  ?? it.max_commission_amount ?? it.commission_value;
+        const salesCount = it.salesCount ?? it.historical_sold ?? it.sold;
 
-        // comissão: aceita valor e/ou %
-        let commissionAmount =
-          it.commissionAmount ??
-          it.commission_amount ??
-          it.comissao ??
-          it.max_commission_amount ??
-          it.commission_value;
-
-        let commissionPercent =
-          it.commissionPercent ??
-          it.commission_percent ??
-          it.commission_rate ??
-          it.max_commission_rate;
-
-        commissionAmount = commissionAmount != null ? Number(commissionAmount) : undefined;
-        commissionPercent = commissionPercent != null ? Number(commissionPercent) : undefined;
-
-        // Deriva faltante, quando possível
-        if (commissionPercent == null && commissionAmount != null && price > 0) {
-          commissionPercent = (commissionAmount / price) * 100;
-        }
-        if (commissionAmount == null && commissionPercent != null && price > 0) {
-          commissionAmount = (commissionPercent / 100) * price;
-        }
-
-        // vendas: aceita várias chaves
-        const salesRaw =
-          it.salesCount ?? it.sales_count ?? it.vendas ?? it.historical_sold ?? it.sold ?? it.sales;
-        const salesCount = salesRaw != null ? Number(salesRaw) : undefined;
+        const { pct, amt } = deriveCommission(price, commissionPercent, commissionAmount);
 
         return {
           id: String(id),
@@ -198,9 +183,9 @@ export default function Products({
           rating,
           image,
           url,
-          commissionPercent,
-          commissionAmount,
-          salesCount,
+          commissionPercent: pct,
+          commissionAmount: amt,
+          salesCount: salesCount != null ? Number(salesCount) : undefined,
         } as ApiItem;
       });
 
@@ -223,17 +208,50 @@ export default function Products({
     setComposerOpen(true);
   }
 
+  const filteredSorted = React.useMemo(() => {
+    const arr = items
+      .map((p) => {
+        const { pct, amt } = deriveCommission(p.price, p.commissionPercent, p.commissionAmount);
+        return { ...p, commissionPercent: pct, commissionAmount: amt };
+      })
+      .filter((p) => {
+        const pct = p.commissionPercent ?? 0;
+        const sales = p.salesCount ?? 0;
+        const pctOk = pct >= (minCommissionPct || 0);
+        const salesOk = sales >= (minSales || 0);
+        return pctOk && salesOk;
+      });
+
+    const by = (k: SortKey) => {
+      switch (k) {
+        case 'commission_amount':
+          return arr.sort((a, b) => (b.commissionAmount ?? 0) - (a.commissionAmount ?? 0));
+        case 'commission_percent':
+          return arr.sort((a, b) => (b.commissionPercent ?? 0) - (a.commissionPercent ?? 0));
+        case 'sales':
+          return arr.sort((a, b) => (b.salesCount ?? 0) - (a.salesCount ?? 0));
+        case 'rating':
+          return arr.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+        case 'price_asc':
+          return arr.sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+        case 'price_desc':
+          return arr.sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+        case 'relevance':
+        default:
+          return arr; // mantém a ordem vinda do backend
+      }
+    };
+
+    return by(sortKey).slice();
+  }, [items, sortKey, minCommissionPct, minSales]);
+
   return (
     <section className="space-y-4">
       <Card>
         <CardHeader
           title="Filtrar/Buscar"
-          subtitle="Digite o que procura e clique em Buscar para carregar os produtos."
-          right={
-            <Button onClick={runSearch} disabled={loading}>
-              {loading ? 'Buscando…' : 'Buscar'}
-            </Button>
-          }
+          subtitle="Busque produtos e refine por comissão e vendas."
+          right={<Button onClick={runSearch} disabled={loading}>{loading ? 'Buscando…' : 'Buscar'}</Button>}
         />
         <CardBody>
           <div className="grid gap-3 md:grid-cols-2">
@@ -243,6 +261,52 @@ export default function Products({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && runSearch()}
             />
+          </div>
+
+          {/* filtros/ordenação extras */}
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <div>
+              <label className="text-sm font-medium text-[#374151] mb-1 block">Ordenar por</label>
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as SortKey)}
+                className="border border-[#FFD9CF] rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D]"
+              >
+                <option value="relevance">Relevância (padrão)</option>
+                <option value="commission_amount">Maior comissão (R$)</option>
+                <option value="commission_percent">Maior comissão (%)</option>
+                <option value="sales">Mais vendas</option>
+                <option value="rating">Maior avaliação</option>
+                <option value="price_asc">Preço: menor → maior</option>
+                <option value="price_desc">Preço: maior → menor</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-[#374151] mb-1 block">Comissão mínima (%)</label>
+              <Input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step={1}
+                placeholder="ex.: 10"
+                value={Number.isFinite(minCommissionPct) ? minCommissionPct : 0}
+                onChange={(e) => setMinCommissionPct(Number(e.target.value || 0))}
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-[#374151] mb-1 block">Vendas mínimas</label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                placeholder="ex.: 50"
+                value={Number.isFinite(minSales) ? minSales : 0}
+                onChange={(e) => setMinSales(Number(e.target.value || 0))}
+              />
+            </div>
           </div>
         </CardBody>
       </Card>
@@ -262,7 +326,7 @@ export default function Products({
       )}
 
       <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {items.map((p) => (
+        {filteredSorted.map((p) => (
           <ProductCard
             key={p.id}
             product={p}
