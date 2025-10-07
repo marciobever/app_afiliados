@@ -1,50 +1,38 @@
-# ---- build ----
+# ---------- deps ----------
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+# Usa lockfile se existir (mais rápido e reprodutível)
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+# ---------- build ----------
 FROM node:20-alpine AS build
 WORKDIR /app
-
-# Dependências primeiro (cache melhor)
-COPY package*.json ./
-RUN npm run build
-
-# Código
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# 🔧 Variáveis de ambiente necessárias no build
-ARG SUPABASE_URL
-ARG SUPABASE_SERVICE_ROLE_KEY
-ARG N8N_BASE_URL
-ARG META_REDIRECT_URI
+# Somente variáveis públicas podem entrar em build:
 ARG NEXT_PUBLIC_META_APP_ID
+ENV NEXT_PUBLIC_META_APP_ID=${NEXT_PUBLIC_META_APP_ID}
 
-ENV NODE_ENV=production \
-    SUPABASE_URL=$SUPABASE_URL \
-    SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY \
-    N8N_BASE_URL=$N8N_BASE_URL \
-    META_REDIRECT_URI=$META_REDIRECT_URI \
-    NEXT_PUBLIC_META_APP_ID=$NEXT_PUBLIC_META_APP_ID
-
-# 🔨 Build Next.js em modo standalone
+# Gera o bundle de produção (standalone)
 RUN npm run build
 
-# ---- runtime ----
+# ---------- runtime ----------
 FROM node:20-alpine AS runtime
 WORKDIR /app
-
 ENV NODE_ENV=production
 ENV PORT=3000
 
 # Usuário não-root
 RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
 
-# Copia o bundle standalone gerado pelo Next
+# Copia servidor standalone e assets estáticos
 COPY --from=build /app/.next/standalone ./
-# Assets estáticos
 COPY --from=build /app/.next/static ./.next/static
-# (Copie o /public se existir)
-# COPY --from=build /app/public ./public
+COPY --from=build /app/public ./public
 
 USER nextjs
 EXPOSE 3000
-
-# 🚀 Inicia o servidor Next.js standalone
 CMD ["node", "server.js"]
