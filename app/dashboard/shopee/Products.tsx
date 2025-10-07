@@ -1,10 +1,12 @@
 'use client';
 
 import React from 'react';
+import ReactDOM from 'react-dom';
 import ComposerDrawer from './ComposerDrawer';
-import { Card, CardHeader, CardBody, Button, Input } from '@/components/ui';
+import { Card, CardHeader, CardBody, Button, Input, Badge } from '@/components/ui';
 import { Star, Percent, TrendingUp, ChevronDown, Check } from 'lucide-react';
 
+/* ------------------------------- Tipagens ------------------------------- */
 type ApiItem = {
   id: string;
   title: string;
@@ -12,12 +14,12 @@ type ApiItem = {
   rating: number;
   image: string;
   url: string;
-  commissionPercent?: number; // 12 => 12%
-  commissionAmount?: number;  // 8.9 => R$
-  salesCount?: number;        // 1543
+  commissionPercent?: number;
+  commissionAmount?: number;
+  salesCount?: number;
 };
 
-/* --------------------------------- utils --------------------------------- */
+/* --------------------------------- Utils -------------------------------- */
 function formatPrice(n?: number) {
   const v = Number(n ?? 0);
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -26,6 +28,7 @@ function formatPercent(n?: number) {
   const v = Number(n ?? 0);
   return `${v.toFixed(0)}%`;
 }
+
 function commissionAmountOf(p: ApiItem) {
   if (typeof p.commissionAmount === 'number') return p.commissionAmount;
   if (typeof p.commissionPercent === 'number' && p.price > 0) {
@@ -41,18 +44,7 @@ function commissionPercentOf(p: ApiItem) {
   return 0;
 }
 
-/* micro chip (bem discreto) */
-function Micro({
-  children,
-}: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-[#FFD9CF] bg-[#FFF9F7] px-2 py-0.5 text-[11px] text-[#374151]">
-      {children}
-    </span>
-  );
-}
-
-/* ---------------------------- Card do produto ---------------------------- */
+/* ------------------------------- ProductCard ---------------------------- */
 function ProductCard({
   product,
   selected,
@@ -62,12 +54,11 @@ function ProductCard({
   selected?: boolean;
   onSelectAndCompose: () => void;
 }) {
-  // texto compacto da comissão (prioriza %; se não tiver, mostra R$; se tiver ambos, mostra “% • R$”)
-  const hasPct = typeof product.commissionPercent === 'number';
-  const hasAmt = typeof product.commissionAmount === 'number';
-  const pctText = hasPct ? formatPercent(product.commissionPercent) : null;
-  const amtText = hasAmt ? formatPrice(product.commissionAmount) : null;
-  const commissionCompact = hasPct ? (amtText ? `${pctText} • ${amtText}` : pctText) : amtText;
+  const pct = typeof product.commissionPercent === 'number'
+    ? product.commissionPercent
+    : (product.price > 0 && typeof product.commissionAmount === 'number'
+        ? (product.commissionAmount / product.price) * 100
+        : undefined);
 
   return (
     <Card className="overflow-hidden">
@@ -81,9 +72,10 @@ function ProductCard({
       </div>
 
       <CardBody className="space-y-3">
-        <h3 className="text-sm font-semibold text-[#111827] line-clamp-2">{product.title}</h3>
+        <h3 className="text-sm font-semibold text-[#111827] line-clamp-2">
+          {product.title}
+        </h3>
 
-        {/* linha: rating à esquerda / preço à direita com metadados abaixo */}
         <div className="flex items-start justify-between">
           <div className="inline-flex items-center gap-1 text-[#6B7280] text-sm">
             <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
@@ -92,18 +84,20 @@ function ProductCard({
 
           <div className="text-right">
             <div className="text-sm font-semibold">{formatPrice(product.price)}</div>
+
+            {/* chips compactos: à direita, mesma linha */}
             <div className="mt-1 flex items-center justify-end gap-2">
-              {commissionCompact && (
-                <Micro>
-                  <Percent className="w-3 h-3" />
-                  {commissionCompact}
-                </Micro>
+              {typeof pct === 'number' && (
+                <Badge tone="success" className="px-2 py-0.5">
+                  {/* só a % */}
+                  {formatPercent(pct)}
+                </Badge>
               )}
               {typeof product.salesCount === 'number' && (
-                <Micro>
-                  <TrendingUp className="w-3 h-3" />
-                  {product.salesCount.toLocaleString('pt-BR')} vendas
-                </Micro>
+                <Badge className="px-2 py-0.5">
+                  {/* só o número de vendas */}
+                  {product.salesCount.toLocaleString('pt-BR')}
+                </Badge>
               )}
             </div>
           </div>
@@ -122,7 +116,7 @@ function ProductCard({
   );
 }
 
-/* ---------------------------- Ordenar (Popover) ---------------------------- */
+/* ------------------------------ Ordenação ------------------------------- */
 type SortKey =
   | 'relevance'
   | 'commission'
@@ -142,23 +136,96 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'priceAsc',      label: 'Preço — menor' },
 ];
 
-function useOutsideClose(ref: React.RefObject<HTMLElement>, onClose: () => void) {
+// Popover via portal — nunca fica atrás dos cards
+function SortMenuPortal({
+  anchor,
+  open,
+  value,
+  onChange,
+  onClose,
+}: {
+  anchor: HTMLButtonElement | null;
+  open: boolean;
+  value: SortKey;
+  onChange: (v: SortKey) => void;
+  onClose: () => void;
+}) {
+  const [rect, setRect] = React.useState<DOMRect | null>(null);
+
   React.useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (!ref.current) return;
-      if (ref.current.contains(e.target as Node)) return;
-      onClose();
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onKey);
+    if (!open || !anchor) return;
+    const update = () => setRect(anchor.getBoundingClientRect());
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
     return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
     };
-  }, [ref, onClose]);
+  }, [open, anchor]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (!document.getElementById('sort-menu-portal')?.contains(target) && target !== anchor) {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClick);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onClick);
+    };
+  }, [open, onClose, anchor]);
+
+  if (!open || !rect) return null;
+
+  const top = rect.top + rect.height + 8; // abaixo do botão
+  const left = rect.right - 256; // menu alinhado à direita do botão
+  const style: React.CSSProperties = {
+    position: 'fixed',
+    top,
+    left: Math.max(8, left),
+    width: 256,
+    zIndex: 10_000,
+  };
+
+  const menu = (
+    <div id="sort-menu-portal" style={style} className="rounded-xl border border-[#FFD9CF] bg-white shadow-lg overflow-hidden">
+      <div className="p-1">
+        {SORT_OPTIONS.map((o) => {
+          const active = o.key === value;
+          return (
+            <button
+              key={o.key}
+              role="menuitemradio"
+              aria-checked={active}
+              onClick={() => { onChange(o.key); onClose(); }}
+              className={[
+                'w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2',
+                active ? 'bg-[#EE4D2D] text-white' : 'hover:bg-[#FFF4F0] text-[#111827]',
+              ].join(' ')}
+            >
+              <span
+                className={[
+                  'inline-flex items-center justify-center w-4 h-4 rounded-full border',
+                  active ? 'border-white bg-white/20' : 'border-[#FFD9CF]',
+                ].join(' ')}
+              >
+                {active && <Check className="w-3 h-3" />}
+              </span>
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  return ReactDOM.createPortal(menu, document.body);
 }
 
 function SortControl({
@@ -169,66 +236,33 @@ function SortControl({
   onChange: (v: SortKey) => void;
 }) {
   const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
-  useOutsideClose(ref, () => setOpen(false));
-
-  const current = SORT_OPTIONS.find((o) => o.key === value)?.label ?? 'Ordenar';
+  const btnRef = React.useRef<HTMLButtonElement | null>(null);
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
+        ref={btnRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-2 rounded-lg border border-[#FFD9CF] px-3 py-2 text-sm hover:bg-[#FFF4F0]"
       >
-        {current}
+        {SORT_OPTIONS.find((o) => o.key === value)?.label ?? 'Ordenar'}
         <ChevronDown className="w-4 h-4 opacity-70" />
       </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 mt-2 w-64 rounded-xl border border-[#FFD9CF] bg-white shadow-lg overflow-hidden z-[999]"
-        >
-          <div className="p-1">
-            {SORT_OPTIONS.map((o) => {
-              const active = o.key === value;
-              return (
-                <button
-                  key={o.key}
-                  role="menuitemradio"
-                  aria-checked={active}
-                  onClick={() => {
-                    onChange(o.key);
-                    setOpen(false);
-                  }}
-                  className={[
-                    'w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2',
-                    active ? 'bg-[#EE4D2D] text-white' : 'hover:bg-[#FFF4F0] text-[#111827]',
-                  ].join(' ')}
-                >
-                  <span
-                    className={[
-                      'inline-flex items-center justify-center w-4 h-4 rounded-full border',
-                      active ? 'border-white bg-white/20' : 'border-[#FFD9CF]',
-                    ].join(' ')}
-                  >
-                    {active && <Check className="w-3 h-3" />}
-                  </span>
-                  {o.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+      <SortMenuPortal
+        anchor={btnRef.current}
+        open={open}
+        value={value}
+        onChange={onChange}
+        onClose={() => setOpen(false)}
+      />
+    </>
   );
 }
 
-/* --------------------------------- Page --------------------------------- */
+/* --------------------------------- Página -------------------------------- */
 export default function Products({
   selected,
   setSelected,
@@ -244,7 +278,6 @@ export default function Products({
   const [items, setItems] = React.useState<ApiItem[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
-
   const [sortBy, setSortBy] = React.useState<SortKey>('relevance');
 
   const [composerOpen, setComposerOpen] = React.useState(false);
@@ -349,8 +382,10 @@ export default function Products({
   return (
     <section className="space-y-4">
       <Card>
+        {/* overflow visível só no container do header (para o botão), 
+           popover em portal evita qualquer conflito */}
         <CardHeader
-          className="relative overflow-visible"
+          className="relative"
           title="Filtrar/Buscar"
           subtitle="Digite o que procura e clique em Buscar para carregar os produtos."
           right={
