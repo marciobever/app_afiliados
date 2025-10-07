@@ -40,7 +40,6 @@ function TerminalCard({
         <p className="text-sm text-gray-400">shopee-cli</p>
       </div>
 
-      {/* Ao clicar na área de imagem/título abre o composer */}
       <button
         onClick={onSelectAndCompose}
         className="mt-4 w-full text-left space-y-3 focus:outline-none"
@@ -61,7 +60,6 @@ function TerminalCard({
       </button>
 
       <div className="flex gap-2 pt-1">
-        {/* Único botão: seleciona e abre o composer */}
         <button
           className={[
             'px-3 py-1.5 rounded text-sm border transition-colors w-full',
@@ -90,9 +88,6 @@ export default function Products({
   setProductsMap: React.Dispatch<React.SetStateAction<Record<string, ApiItem>>>;
 }) {
   const [query, setQuery] = React.useState('');
-  const [onlyPromo, setOnlyPromo] = React.useState(false);
-  const [minRating, setMinRating] = React.useState(0);
-
   const [items, setItems] = React.useState<ApiItem[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
@@ -108,8 +103,8 @@ export default function Products({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: query || 'liquidificador',
-          filters: { limit: 24, onlyPromo, minRating },
+          query: query?.trim() || 'liquidificador',
+          filters: { limit: 24 }, // ✅ só limite
           sort: 'relevance',
           country: 'BR',
         }),
@@ -141,12 +136,10 @@ export default function Products({
 
   const filtered = React.useMemo(() => {
     let out = items.slice();
-    if (onlyPromo) out = out.filter((p: any) => Array.isArray((p as any).tags) && (p as any).tags.includes('promo'));
-    if (minRating > 0) out = out.filter((p) => Number(p.rating || 0) >= minRating);
     const q = query.trim().toLowerCase();
     if (q) out = out.filter((p) => p.title.toLowerCase().includes(q));
     return out;
-  }, [items, query, onlyPromo, minRating]);
+  }, [items, query]);
 
   return (
     <section className="space-y-4">
@@ -166,37 +159,25 @@ export default function Products({
             </button>
           </div>
         </div>
-        <div className="p-4 grid md:grid-cols-3 gap-3">
+
+        <form
+          onSubmit={(e) => { e.preventDefault(); runSearch(); }}
+          className="p-4 grid gap-3 md:grid-cols-[1fr_auto]"
+        >
           <input
             className="border border-[#FFD9CF] rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D]"
             placeholder="Buscar por título…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && runSearch()}
           />
-          <label className="flex items-center gap-2 text-sm text-[#374151]">
-            <input
-              type="checkbox"
-              checked={onlyPromo}
-              onChange={(e) => setOnlyPromo(e.target.checked)}
-              className="w-4 h-4 rounded border-[#FFD9CF] text-[#EE4D2D] focus:ring-[#EE4D2D]"
-            />
-            Apenas promoções
-          </label>
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-[#6B7280]">Avaliações mín.</span>
-            <input
-              type="range"
-              min={0}
-              max={5}
-              step={0.5}
-              value={minRating}
-              onChange={(e) => setMinRating(Number(e.target.value))}
-              className="w-full accent-[#EE4D2D]"
-            />
-            <span className="text-[#111827] font-medium">{minRating.toFixed(1)}</span>
-          </div>
-        </div>
+          <button
+            type="submit"
+            className="px-4 py-2 rounded-lg text-sm transition-colors bg-[#EE4D2D] hover:bg-[#D8431F] text-white"
+            disabled={loading}
+          >
+            {loading ? 'Buscando…' : 'Buscar'}
+          </button>
+        </form>
       </div>
 
       {/* Estado de erro */}
