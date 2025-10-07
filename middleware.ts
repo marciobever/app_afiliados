@@ -4,30 +4,23 @@ import { NextResponse } from "next/server";
 
 const SESSION_COOKIE = "app_session";
 
-// APIs públicas (não exigem login)
-const PUBLIC_API = [
-  "/api/auth/login",
-  "/api/auth/signup",
-  "/api/auth/logout",
-  "/api/dev/login",
-  "/api/dev/seed-owner",
-  "/api/health",
-  "/api/dev/env-check",
+// APIs públicas (não exigem sessão)
+const PUBLIC_API_PREFIXES = [
+  "/api/auth/",     // login, signup, logout, callback…
+  "/api/health",    // health-check
+  "/api/dev/",      // endpoints de dev, se houver
+  "/api/meta",      // OAuth Meta (start/callback)
+  "/api/webhooks",  // webhooks (Meta/Outros)
 ];
 
-// Páginas públicas (visíveis sem login)
-const PUBLIC_PAGES = [
-  "/", // landing principal
-  "/login",
-  "/signup",
-  "/privacy",
-  "/terms",
-];
+// Páginas públicas do APP
+const PUBLIC_PAGES = ["/login", "/signup"];
 
 export function middleware(req: NextRequest) {
-  const { pathname, searchParams } = req.nextUrl;
+  const url = req.nextUrl;
+  const { pathname } = url;
 
-  // liberar assets estáticos e arquivos públicos
+  // liberar estáticos
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
@@ -39,45 +32,50 @@ export function middleware(req: NextRequest) {
 
   const hasSession = Boolean(req.cookies.get(SESSION_COOKIE)?.value);
 
-  // 1) Se usuário já estiver logado e acessar /login ou /signup → redireciona pro dashboard
-  if ((pathname === "/login" || pathname === "/signup") && hasSession) {
-    const nextParam = searchParams.get("next");
-    const url = req.nextUrl.clone();
-    url.pathname = nextParam || "/dashboard/shopee";
+  // Home do APP: manda pro fluxo correto
+  if (pathname === "/") {
+    url.pathname = hasSession ? "/dashboard/shopee" : "/login";
     url.search = "";
     return NextResponse.redirect(url);
   }
 
-  // 2) APIs públicas liberadas
-  if (PUBLIC_API.some((p) => pathname.startsWith(p))) {
+  // Logado tentando ir para /login ou /signup → vai pro dashboard
+  if ((pathname === "/login" || pathname === "/signup") && hasSession) {
+    const nextParam = req.nextUrl.searchParams.get("next");
+    const to = req.nextUrl.clone();
+    to.pathname = nextParam || "/dashboard/shopee";
+    to.search = "";
+    return NextResponse.redirect(to);
+  }
+
+  // APIs públicas liberadas
+  if ( PUBLIC_API_PREFIXES.some((p) => pathname.startsWith(p)) ) {
     return NextResponse.next();
   }
 
-  // 3) Páginas públicas liberadas
-  if (PUBLIC_PAGES.includes(pathname)) {
+  // Páginas públicas liberadas
+  if ( PUBLIC_PAGES.includes(pathname) ) {
     return NextResponse.next();
   }
 
-  // 4) Verifica se rota requer autenticação
+  // Protegidas: /dashboard/* e /api/* (o que não for público)
   const needsAuth =
     pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/api/") ||
-    pathname === "/dashboard";
+    pathname.startsWith("/api/");
 
   if (!needsAuth) {
-    // qualquer outra rota que não se encaixe acima segue pública
     return NextResponse.next();
   }
 
-  // 5) Se o usuário tem sessão → ok
+  // Autenticado → ok
   if (hasSession) return NextResponse.next();
 
-  // 6) APIs protegidas sem sessão → 401 JSON
+  // API protegida sem sessão → 401
   if (pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // 7) Páginas protegidas sem sessão → redireciona p/ login
+  // Página protegida sem sessão → login com next
   const loginUrl = req.nextUrl.clone();
   loginUrl.pathname = "/login";
   loginUrl.search = "";
@@ -85,7 +83,7 @@ export function middleware(req: NextRequest) {
   return NextResponse.redirect(loginUrl);
 }
 
-// Aplica globalmente (exceto estáticos)
+// Aplica globalmente (exceto estáticos/arquivos públicos)
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)"],
 };

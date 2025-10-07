@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "node .next/standalone/server.js",
+    "start:prod": "NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000 node .next/standalone/server.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
