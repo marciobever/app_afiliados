@@ -17,13 +17,11 @@ function LogoBadge({
 }) {
   if (logo) {
     return (
-      <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl overflow-hidden ring-1 ring-black/5 bg-white/80 backdrop-blur">
-        {/* Image mantém transparência se o SVG tiver */}
+      <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl overflow-hidden ring-1 ring-black/5 bg-white/80">
         <Image src={logo} alt={name} width={20} height={20} />
       </span>
     );
   }
-  // fallback monograma
   const initials = name
     .split(" ")
     .map((s) => s[0])
@@ -46,61 +44,46 @@ export default function PlatformCard({ p }: { p: Platform }) {
   return (
     <Card
       className={cx(
-        "overflow-hidden transition-all",
-        "hover:shadow-md hover:-translate-y-0.5"
+        "transition-shadow",
+        "hover:shadow-md" // sem translate para não bugar com Safari
       )}
-      style={{
-        borderColor: p.brand.ring,
-      }}
+      style={{ borderColor: p.brand.ring }}
     >
-      {/* Fundo decorativo */}
+      {/* fundo sutil (sem blur/transform) */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0"
+        className="absolute inset-0"
         style={{
           background: `linear-gradient(180deg, ${p.brand.from}, ${p.brand.to})`,
         }}
       />
-      {/* “rodapé” com gradiente mais forte */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute left-0 right-0 bottom-0 h-2"
-        style={{
-          background: `linear-gradient(90deg, ${p.brand.from}, ${p.brand.to})`,
-        }}
-      />
 
       <CardHeader
-        className="relative bg-white/60 backdrop-blur-sm"
+        className="relative bg-white/75"
         title={
           <span className="inline-flex items-center gap-2">
             <LogoBadge name={p.name} mono={p.brand.mono} logo={p.brand.logo} />
             <span className="font-semibold">{p.name}</span>
-            {p.available ? (
-              <Badge tone="success">disponível</Badge>
-            ) : (
-              <Badge>em breve</Badge>
-            )}
+            {p.available ? <Badge tone="success">disponível</Badge> : <Badge>em breve</Badge>}
           </span>
         }
         subtitle={<span>{p.desc}</span>}
         right={
-            p.available ? (
-              <Link href={p.href!}>
-                <Button>Abrir</Button>
-              </Link>
-            ) : (
-              <Button variant="outline" disabled>
-                Em breve
-              </Button>
-            )
+          p.available ? (
+            <Link href={p.href!}>
+              <Button>Abrir</Button>
+            </Link>
+          ) : (
+            <Button variant="outline" disabled>
+              Em breve
+            </Button>
+          )
         }
       />
 
       <CardBody className="relative">
-        {/* Espaço para um mini preview futuro */}
-        <div className="h-20 rounded-xl border border-dashed border-black/10 bg-white/40 backdrop-blur-sm flex items-center justify-center text-xs text-[#6B7280]">
-          {p.available ? "Pronto para usar" : "Prévia em breve"}
+        <div className="h-20 rounded-xl border border-dashed border-black/10 bg-white/60 flex items-center justify-center text-xs text-[#6B7280]">
+          {disabled ? "Prévia em breve" : "Pronto para usar"}
         </div>
       </CardBody>
     </Card>
