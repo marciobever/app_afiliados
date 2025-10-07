@@ -3,7 +3,7 @@
 import React from 'react';
 import ComposerDrawer from './ComposerDrawer';
 import { Card, CardHeader, CardBody, Button, Input, Badge } from '@/components/ui';
-import { Filter, Star, Percent, TrendingUp } from 'lucide-react';
+import { Star, Percent, TrendingUp } from 'lucide-react';
 
 type ApiItem = {
   id: string;
@@ -12,9 +12,9 @@ type ApiItem = {
   rating: number;
   image: string;
   url: string;
-  commissionPercent?: number; // ex: 12 (=> 12%)
-  commissionAmount?: number;  // ex: 8.9 (R$)
-  salesCount?: number;        // ex: 1543
+  commissionPercent?: number; // ex.: 12 -> 12%
+  commissionAmount?: number;  // ex.: 8.9 -> R$
+  salesCount?: number;        // ex.: 1543
 };
 
 function formatPrice(n?: number) {
@@ -36,6 +36,17 @@ function ProductCard({
   selected?: boolean;
   onSelectAndCompose: () => void;
 }) {
+  // monta o texto da comissão (valor + % se ambos existirem)
+  const hasAmount = typeof product.commissionAmount === 'number';
+  const hasPercent = typeof product.commissionPercent === 'number';
+  const commissionText = hasAmount && hasPercent
+    ? `Comissão ${formatPrice(product.commissionAmount)} (${formatPercent(product.commissionPercent)})`
+    : hasAmount
+    ? `Comissão ${formatPrice(product.commissionAmount)}`
+    : hasPercent
+    ? `Comissão ${formatPercent(product.commissionPercent)}`
+    : '';
+
   return (
     <Card className="overflow-hidden">
       <div className="aspect-[4/3] bg-[#FFF9F7] border-b border-[#FFD9CF]">
@@ -65,24 +76,19 @@ function ProductCard({
 
           {/* badges: comissão + vendas */}
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            {typeof product.commissionAmount === 'number' ? (
+            {commissionText && (
               <Badge tone="success" className="inline-flex items-center gap-1">
                 <Percent className="w-3 h-3" />
-                Comissão {formatPrice(product.commissionAmount)}
+                {commissionText}
               </Badge>
-            ) : typeof product.commissionPercent === 'number' ? (
-              <Badge tone="success" className="inline-flex items-center gap-1">
-                <Percent className="w-3 h-3" />
-                Comissão {formatPercent(product.commissionPercent)}
-              </Badge>
-            ) : null}
+            )}
 
-            {typeof product.salesCount === 'number' ? (
+            {typeof product.salesCount === 'number' && (
               <Badge className="inline-flex items-center gap-1">
                 <TrendingUp className="w-3 h-3" />
                 {product.salesCount.toLocaleString('pt-BR')} vendas
               </Badge>
-            ) : null}
+            )}
           </div>
         </div>
 
@@ -133,48 +139,68 @@ export default function Products({
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-
       const data = await res.json();
 
-      // 🔧 normalizador: mapeia campos comuns da Shopee para nosso formato
+      // 🔧 Normalizador robusto: aceita camelCase e snake_case do n8n
       const list: ApiItem[] = (Array.isArray(data?.items) ? data.items : []).map((it: any) => {
-        const id = it.id ?? it.itemid ?? it.itemId ?? String(Math.random());
-        const title = it.title ?? it.name ?? '';
-        const price = it.price ?? it.sale_price ?? it.price_min ?? 0;
-        const rating = it.rating ?? it.item_rating?.rating_star ?? 0;
+        // id (tenta product_uid, depois shop_id+item_id, depois id genérico)
+        const id =
+          it.id ??
+          it.product_uid ??
+          (it.shop_id != null && it.item_id != null ? `${it.shop_id}_${it.item_id}` : String(Math.random()));
+
+        const title = it.title ?? it.nome ?? it.name ?? '';
+        const price = Number(it.price ?? it.preco_min ?? it.preco ?? it.sale_price ?? it.price_min ?? 0);
+        const rating = Number(it.rating ?? it.avaliacao ?? it.item_rating?.rating_star ?? 0);
+
         const image =
           it.image ??
+          it.image_url ??
           (Array.isArray(it.images) && it.images[0] ? it.images[0] : '') ??
           '';
-        const url = it.url ?? it.link ?? `https://shopee.com.br/product/${id}`;
 
-        // comissão: aceita percentuais ou valores absolutos
-        const commissionPercent =
-          it.commissionPercent ??
-          it.max_commission_rate ??
-          it.commission_rate ??
-          undefined;
+        const url = it.url ?? it.offer_link ?? it.product_link ?? `https://shopee.com.br/product/${id}`;
 
-        const commissionAmount =
+        // comissão: aceita valor e/ou %
+        let commissionAmount =
           it.commissionAmount ??
+          it.commission_amount ??
+          it.comissao ??
           it.max_commission_amount ??
-          it.commission_value ??
-          undefined;
+          it.commission_value;
 
-        // vendas: histórico/atuais
-        const salesCount =
-          it.salesCount ?? it.historical_sold ?? it.sold ?? undefined;
+        let commissionPercent =
+          it.commissionPercent ??
+          it.commission_percent ??
+          it.commission_rate ??
+          it.max_commission_rate;
+
+        commissionAmount = commissionAmount != null ? Number(commissionAmount) : undefined;
+        commissionPercent = commissionPercent != null ? Number(commissionPercent) : undefined;
+
+        // Deriva faltante, quando possível
+        if (commissionPercent == null && commissionAmount != null && price > 0) {
+          commissionPercent = (commissionAmount / price) * 100;
+        }
+        if (commissionAmount == null && commissionPercent != null && price > 0) {
+          commissionAmount = (commissionPercent / 100) * price;
+        }
+
+        // vendas: aceita várias chaves
+        const salesRaw =
+          it.salesCount ?? it.sales_count ?? it.vendas ?? it.historical_sold ?? it.sold ?? it.sales;
+        const salesCount = salesRaw != null ? Number(salesRaw) : undefined;
 
         return {
           id: String(id),
           title,
-          price: Number(price),
-          rating: Number(rating),
+          price,
+          rating,
           image,
           url,
-          commissionPercent: commissionPercent != null ? Number(commissionPercent) : undefined,
-          commissionAmount: commissionAmount != null ? Number(commissionAmount) : undefined,
-          salesCount: salesCount != null ? Number(salesCount) : undefined,
+          commissionPercent,
+          commissionAmount,
+          salesCount,
         } as ApiItem;
       });
 
@@ -203,7 +229,11 @@ export default function Products({
         <CardHeader
           title="Filtrar/Buscar"
           subtitle="Digite o que procura e clique em Buscar para carregar os produtos."
-          right={<Button onClick={runSearch} disabled={loading}>{loading ? 'Buscando…' : 'Buscar'}</Button>}
+          right={
+            <Button onClick={runSearch} disabled={loading}>
+              {loading ? 'Buscando…' : 'Buscar'}
+            </Button>
+          }
         />
         <CardBody>
           <div className="grid gap-3 md:grid-cols-2">
