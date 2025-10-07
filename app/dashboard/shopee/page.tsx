@@ -1,10 +1,11 @@
 'use client';
 
 import React from 'react';
-import { ShoppingCart } from 'lucide-react';
+import { ShoppingCart, Clock } from 'lucide-react';
 import Products from './Products';
+import History from './History';
 
-type Tab = 'produtos';
+type Tab = 'produtos' | 'historico';
 
 function Tabs({
   value,
@@ -13,24 +14,25 @@ function Tabs({
   value: Tab;
   onChange: (v: Tab) => void;
 }) {
-  const tabs: Array<{ key: Tab; label: string }> = [
-    { key: 'produtos', label: 'Produtos' },
+  const tabs: Array<{ key: Tab; label: string; icon?: React.ReactNode }> = [
+    { key: 'produtos', label: 'Produtos', icon: <ShoppingCart className="w-4 h-4" /> },
+    { key: 'historico', label: 'Histórico', icon: <Clock className="w-4 h-4" /> },
   ];
   return (
     <div className="w-full">
-      <div className="grid grid-cols-1 w-full md:w-[180px] rounded-xl overflow-hidden border border-[#FFD9CF] bg-white">
+      <div className="inline-grid grid-cols-2 rounded-xl overflow-hidden border border-[#FFD9CF] bg-white">
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => onChange(t.key)}
             className={[
-              'px-4 py-2 text-sm font-medium border-r last:border-r-0 transition-colors',
-              'border-[#FFD9CF]',
+              'px-4 py-2 text-sm font-medium transition-colors flex items-center justify-center gap-2',
               value === t.key
                 ? 'bg-[#EE4D2D] text-white'
                 : 'bg-white text-[#111827] hover:bg-[#FFF4F0]',
             ].join(' ')}
           >
+            {t.icon}
             {t.label}
           </button>
         ))}
@@ -68,6 +70,8 @@ export default function ShopeeDashboardPage() {
           setProductsMap={setProductsMap}
         />
       )}
+
+      {tab === 'historico' && <History market="shopee" />}
     </main>
   );
 }
