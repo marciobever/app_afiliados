@@ -3,7 +3,7 @@
 import React from 'react';
 import ComposerDrawer from './ComposerDrawer';
 import { Card, CardHeader, CardBody, Button, Input, Badge } from '@/components/ui';
-import { Star, Percent, TrendingUp } from 'lucide-react';
+import { Star, Percent, TrendingUp, ChevronDown, Check } from 'lucide-react';
 
 type ApiItem = {
   id: string;
@@ -26,7 +26,7 @@ function formatPercent(n?: number) {
   return `${v.toFixed(0)}%`;
 }
 
-// helpers para ordenar
+/* ------------------------ helpers de ordenação ------------------------ */
 function commissionAmountOf(p: ApiItem) {
   if (typeof p.commissionAmount === 'number') return p.commissionAmount;
   if (typeof p.commissionPercent === 'number' && p.price > 0) {
@@ -42,7 +42,7 @@ function commissionPercentOf(p: ApiItem) {
   return 0;
 }
 
-/** Card de produto padronizado */
+/* ---------------------------- Card do produto ---------------------------- */
 function ProductCard({
   product,
   selected,
@@ -120,6 +120,7 @@ function ProductCard({
   );
 }
 
+/* ---------------------------- Ordenar (Popover) ---------------------------- */
 type SortKey =
   | 'relevance'
   | 'commission'
@@ -129,7 +130,7 @@ type SortKey =
   | 'priceDesc'
   | 'priceAsc';
 
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+const SORT_OPTIONS: { key: SortKey; label: string; hint?: string }[] = [
   { key: 'relevance',     label: 'Relevância' },
   { key: 'commission',    label: 'Comissão (R$) — maior' },
   { key: 'commissionPct', label: 'Comissão (%) — maior' },
@@ -139,6 +140,92 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'priceAsc',      label: 'Preço — menor' },
 ];
 
+function useOutsideClose(ref: React.RefObject<HTMLElement>, onClose: () => void) {
+  React.useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!ref.current) return;
+      if (ref.current.contains(e.target as Node)) return;
+      onClose();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [ref, onClose]);
+}
+
+function SortControl({
+  value,
+  onChange,
+}: {
+  value: SortKey;
+  onChange: (v: SortKey) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  useOutsideClose(ref, () => setOpen(false));
+
+  const current = SORT_OPTIONS.find((o) => o.key === value)?.label ?? 'Ordenar';
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-2 rounded-lg border border-[#FFD9CF] px-3 py-2 text-sm hover:bg-[#FFF4F0]"
+      >
+        {current}
+        <ChevronDown className="w-4 h-4 opacity-70" />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 mt-2 w-60 rounded-xl border border-[#FFD9CF] bg-white shadow-lg overflow-hidden z-10"
+        >
+          <div className="p-1">
+            {SORT_OPTIONS.map((o) => {
+              const active = o.key === value;
+              return (
+                <button
+                  key={o.key}
+                  role="menuitemradio"
+                  aria-checked={active}
+                  onClick={() => {
+                    onChange(o.key);
+                    setOpen(false);
+                  }}
+                  className={[
+                    'w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2',
+                    active ? 'bg-[#EE4D2D] text-white' : 'hover:bg-[#FFF4F0] text-[#111827]',
+                  ].join(' ')}
+                >
+                  <span className={[
+                    'inline-flex items-center justify-center w-4 h-4 rounded-full border',
+                    active ? 'border-white bg-white/20' : 'border-[#FFD9CF]',
+                  ].join(' ')}
+                  >
+                    {active && <Check className="w-3 h-3" />}
+                  </span>
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* --------------------------------- Page --------------------------------- */
 export default function Products({
   selected,
   setSelected,
@@ -177,7 +264,6 @@ export default function Products({
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
 
-      // Normalizador robusto
       const list: ApiItem[] = (Array.isArray(data?.items) ? data.items : []).map((it: any) => {
         const id =
           it.id ??
@@ -244,9 +330,8 @@ export default function Products({
     setComposerOpen(true);
   }
 
-  // Ordenação no front sem perder o “look”
   const sorted = React.useMemo(() => {
-    const base = items.slice(); // mantém ordem original para "Relevância"
+    const base = items.slice();
     switch (sortBy) {
       case 'commission':
         return base.sort((a, b) => commissionAmountOf(b) - commissionAmountOf(a));
@@ -273,16 +358,7 @@ export default function Products({
           subtitle="Digite o que procura e clique em Buscar para carregar os produtos."
           right={
             <div className="flex gap-2">
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as SortKey)}
-                aria-label="Ordenar por"
-                className="border border-[#FFD9CF] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D]"
-              >
-                {SORT_OPTIONS.map((o) => (
-                  <option key={o.key} value={o.key}>{o.label}</option>
-                ))}
-              </select>
+              <SortControl value={sortBy} onChange={setSortBy} />
               <Button onClick={runSearch} disabled={loading}>
                 {loading ? 'Buscando…' : 'Buscar'}
               </Button>
