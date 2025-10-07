@@ -12,9 +12,9 @@ type ApiItem = {
   rating: number;
   image: string;
   url: string;
-  commissionPercent?: number; // ex.: 12 -> 12%
-  commissionAmount?: number;  // ex.: 8.9 -> R$
-  salesCount?: number;        // ex.: 1543
+  commissionPercent?: number; // 12 -> 12%
+  commissionAmount?: number;  // 8.9 -> R$
+  salesCount?: number;        // 1543
 };
 
 function formatPrice(n?: number) {
@@ -24,6 +24,22 @@ function formatPrice(n?: number) {
 function formatPercent(n?: number) {
   const v = Number(n ?? 0);
   return `${v.toFixed(0)}%`;
+}
+
+// helpers para ordenar
+function commissionAmountOf(p: ApiItem) {
+  if (typeof p.commissionAmount === 'number') return p.commissionAmount;
+  if (typeof p.commissionPercent === 'number' && p.price > 0) {
+    return (p.commissionPercent / 100) * p.price;
+  }
+  return 0;
+}
+function commissionPercentOf(p: ApiItem) {
+  if (typeof p.commissionPercent === 'number') return p.commissionPercent;
+  if (typeof p.commissionAmount === 'number' && p.price > 0) {
+    return (p.commissionAmount / p.price) * 100;
+  }
+  return 0;
 }
 
 /** Card de produto padronizado */
@@ -36,16 +52,16 @@ function ProductCard({
   selected?: boolean;
   onSelectAndCompose: () => void;
 }) {
-  // monta o texto da comissão (valor + % se ambos existirem)
   const hasAmount = typeof product.commissionAmount === 'number';
   const hasPercent = typeof product.commissionPercent === 'number';
-  const commissionText = hasAmount && hasPercent
-    ? `Comissão ${formatPrice(product.commissionAmount)} (${formatPercent(product.commissionPercent)})`
-    : hasAmount
-    ? `Comissão ${formatPrice(product.commissionAmount)}`
-    : hasPercent
-    ? `Comissão ${formatPercent(product.commissionPercent)}`
-    : '';
+  const commissionText =
+    hasAmount && hasPercent
+      ? `Comissão ${formatPrice(product.commissionAmount)} (${formatPercent(product.commissionPercent)})`
+      : hasAmount
+      ? `Comissão ${formatPrice(product.commissionAmount)}`
+      : hasPercent
+      ? `Comissão ${formatPercent(product.commissionPercent)}`
+      : '';
 
   return (
     <Card className="overflow-hidden">
@@ -74,7 +90,6 @@ function ProductCard({
             </div>
           </div>
 
-          {/* badges: comissão + vendas */}
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {commissionText && (
               <Badge tone="success" className="inline-flex items-center gap-1">
@@ -105,6 +120,25 @@ function ProductCard({
   );
 }
 
+type SortKey =
+  | 'relevance'
+  | 'commission'
+  | 'commissionPct'
+  | 'sales'
+  | 'rating'
+  | 'priceDesc'
+  | 'priceAsc';
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'relevance',     label: 'Relevância' },
+  { key: 'commission',    label: 'Comissão (R$) — maior' },
+  { key: 'commissionPct', label: 'Comissão (%) — maior' },
+  { key: 'sales',         label: 'Vendas — maior' },
+  { key: 'rating',        label: 'Avaliação — maior' },
+  { key: 'priceDesc',     label: 'Preço — maior' },
+  { key: 'priceAsc',      label: 'Preço — menor' },
+];
+
 export default function Products({
   selected,
   setSelected,
@@ -120,6 +154,8 @@ export default function Products({
   const [items, setItems] = React.useState<ApiItem[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
+
+  const [sortBy, setSortBy] = React.useState<SortKey>('relevance');
 
   const [composerOpen, setComposerOpen] = React.useState(false);
   const [composerProduct, setComposerProduct] = React.useState<ApiItem | null>(null);
@@ -141,44 +177,30 @@ export default function Products({
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
 
-      // 🔧 Normalizador robusto: aceita camelCase e snake_case do n8n
+      // Normalizador robusto
       const list: ApiItem[] = (Array.isArray(data?.items) ? data.items : []).map((it: any) => {
-        // id (tenta product_uid, depois shop_id+item_id, depois id genérico)
         const id =
           it.id ??
           it.product_uid ??
           (it.shop_id != null && it.item_id != null ? `${it.shop_id}_${it.item_id}` : String(Math.random()));
-
         const title = it.title ?? it.nome ?? it.name ?? '';
         const price = Number(it.price ?? it.preco_min ?? it.preco ?? it.sale_price ?? it.price_min ?? 0);
         const rating = Number(it.rating ?? it.avaliacao ?? it.item_rating?.rating_star ?? 0);
-
         const image =
           it.image ??
           it.image_url ??
           (Array.isArray(it.images) && it.images[0] ? it.images[0] : '') ??
           '';
-
         const url = it.url ?? it.offer_link ?? it.product_link ?? `https://shopee.com.br/product/${id}`;
 
-        // comissão: aceita valor e/ou %
         let commissionAmount =
-          it.commissionAmount ??
-          it.commission_amount ??
-          it.comissao ??
-          it.max_commission_amount ??
-          it.commission_value;
-
+          it.commissionAmount ?? it.commission_amount ?? it.comissao ?? it.max_commission_amount ?? it.commission_value;
         let commissionPercent =
-          it.commissionPercent ??
-          it.commission_percent ??
-          it.commission_rate ??
-          it.max_commission_rate;
+          it.commissionPercent ?? it.commission_percent ?? it.commission_rate ?? it.max_commission_rate;
 
         commissionAmount = commissionAmount != null ? Number(commissionAmount) : undefined;
         commissionPercent = commissionPercent != null ? Number(commissionPercent) : undefined;
 
-        // Deriva faltante, quando possível
         if (commissionPercent == null && commissionAmount != null && price > 0) {
           commissionPercent = (commissionAmount / price) * 100;
         }
@@ -186,7 +208,6 @@ export default function Products({
           commissionAmount = (commissionPercent / 100) * price;
         }
 
-        // vendas: aceita várias chaves
         const salesRaw =
           it.salesCount ?? it.sales_count ?? it.vendas ?? it.historical_sold ?? it.sold ?? it.sales;
         const salesCount = salesRaw != null ? Number(salesRaw) : undefined;
@@ -223,6 +244,27 @@ export default function Products({
     setComposerOpen(true);
   }
 
+  // Ordenação no front sem perder o “look”
+  const sorted = React.useMemo(() => {
+    const base = items.slice(); // mantém ordem original para "Relevância"
+    switch (sortBy) {
+      case 'commission':
+        return base.sort((a, b) => commissionAmountOf(b) - commissionAmountOf(a));
+      case 'commissionPct':
+        return base.sort((a, b) => commissionPercentOf(b) - commissionPercentOf(a));
+      case 'sales':
+        return base.sort((a, b) => (b.salesCount ?? 0) - (a.salesCount ?? 0));
+      case 'rating':
+        return base.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+      case 'priceDesc':
+        return base.sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+      case 'priceAsc':
+        return base.sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+      default:
+        return base; // relevância
+    }
+  }, [items, sortBy]);
+
   return (
     <section className="space-y-4">
       <Card>
@@ -230,9 +272,21 @@ export default function Products({
           title="Filtrar/Buscar"
           subtitle="Digite o que procura e clique em Buscar para carregar os produtos."
           right={
-            <Button onClick={runSearch} disabled={loading}>
-              {loading ? 'Buscando…' : 'Buscar'}
-            </Button>
+            <div className="flex gap-2">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortKey)}
+                aria-label="Ordenar por"
+                className="border border-[#FFD9CF] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#EE4D2D]/30 focus:border-[#EE4D2D]"
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.key} value={o.key}>{o.label}</option>
+                ))}
+              </select>
+              <Button onClick={runSearch} disabled={loading}>
+                {loading ? 'Buscando…' : 'Buscar'}
+              </Button>
+            </div>
           }
         />
         <CardBody>
@@ -262,7 +316,7 @@ export default function Products({
       )}
 
       <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {items.map((p) => (
+        {sorted.map((p) => (
           <ProductCard
             key={p.id}
             product={p}
