@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui";
 
 type Props = { initialLoggedIn?: boolean };
@@ -33,17 +34,16 @@ export default function Header({ initialLoggedIn = false }: Props) {
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-[#FFD9CF]">
-      <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-end">
-        {loggedIn ? (
-          <Button onClick={sair}>Sair</Button>
-        ) : (
-          <a
-            href={SITE_URL}
+      <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-end gap-2">
+        {loggedIn && (
+          <Link
+            href="/dashboard/configuracoes"
             className="px-4 py-2 rounded-lg text-sm border border-[#FFD9CF] hover:bg-[#FFF4F0] text-[#111827]"
           >
-            Voltar ao site
-          </a>
+            Configurações
+          </Link>
         )}
+        <Button onClick={sair}>Sair</Button>
       </div>
     </header>
   );
