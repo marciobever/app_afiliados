@@ -4,6 +4,7 @@ import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 import Header from "@/components/Header";
 import Logo from "@/components/Logo";
+import Link from "next/link";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -20,7 +21,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR">
       <body className={`${inter.className} bg-white text-gray-900 antialiased`}>
         <Header initialLoggedIn={hasSession} />
-        <main>{children}</main>
+
+        <main className="min-h-[70vh]">{children}</main>
 
         <footer className="border-t mt-10">
           <div className="mx-auto max-w-7xl px-4 py-8 text-sm text-gray-600">
