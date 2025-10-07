@@ -13,7 +13,7 @@ export function Card(props: React.HTMLAttributes<HTMLDivElement>) {
     <section
       {...props}
       className={cx(
-        "rounded-2xl border border-[#FFD9CF] bg-white shadow-sm",
+        "relative overflow-hidden rounded-2xl border border-[#FFD9CF] bg-white shadow-sm",
         props.className
       )}
     />
@@ -25,8 +25,8 @@ export function CardHeader({
   right,
   className,
 }: {
-  title: React.ReactNode;
-  subtitle?: React.ReactNode;
+  title: React.ReactNode;              // <— aceita nós React
+  subtitle?: React.ReactNode;          // <— idem
   right?: React.ReactNode;
   className?: string;
 }) {
@@ -39,9 +39,7 @@ export function CardHeader({
     >
       <div>
         <h3 className="font-semibold text-base">{title}</h3>
-        {subtitle ? (
-          <div className="text-sm text-[#6B7280] mt-0.5">{subtitle}</div>
-        ) : null}
+        {subtitle ? <div className="text-sm text-[#6B7280] mt-0.5">{subtitle}</div> : null}
       </div>
       {right}
     </div>
@@ -64,9 +62,7 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     />
   );
 }
-export function Textarea(
-  props: React.TextareaHTMLAttributes<HTMLTextAreaElement>
-) {
+export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
@@ -160,14 +156,14 @@ export function Tabs<T extends string>({
   );
 }
 
-/* Section header (título + subtítulo) */
+/* Section header */
 export function SectionHeader({
   title,
   subtitle,
   emoji,
 }: {
-  title: React.ReactNode;
-  subtitle?: React.ReactNode;
+  title: React.ReactNode;             // <— aceita nós React
+  subtitle?: React.ReactNode;         // <— idem
   emoji?: string;
 }) {
   return (
@@ -176,9 +172,7 @@ export function SectionHeader({
         {emoji ? <span className="text-2xl">{emoji}</span> : null}
         {title}
       </h1>
-      {subtitle ? (
-        <div className="text-sm text-[#6B7280] mt-1">{subtitle}</div>
-      ) : null}
+      {subtitle ? <div className="text-sm text-[#6B7280] mt-1">{subtitle}</div> : null}
     </header>
   );
 }
