@@ -5,9 +5,8 @@ import { useEffect, useState } from "react";
 
 type Props = { initialLoggedIn?: boolean };
 
-function cx(...a: Array<string | false | null | undefined>) {
-  return a.filter(Boolean).join(" ");
-}
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL || "https://seureview.com.br";
 
 export default function Header({ initialLoggedIn = false }: Props) {
   const [open, setOpen] = useState(false);
@@ -27,12 +26,6 @@ export default function Header({ initialLoggedIn = false }: Props) {
     return () => window.removeEventListener("focus", check);
   }, []);
 
-  // Menu só com rotas do app (tudo funciona logado/deslogado)
-  const navPrivate = [
-    { href: "/dashboard/shopee", label: "Dashboard" },
-    { href: "/dashboard/configuracoes", label: "Configurações" },
-  ];
-
   async function logout() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
@@ -44,27 +37,25 @@ export default function Header({ initialLoggedIn = false }: Props) {
   const homeHref = loggedIn ? "/dashboard/shopee" : "/login";
 
   return (
-    <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-[#FFD9CF]">
+    <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b">
       <div className="mx-auto max-w-7xl px-4 py-3">
-        <div className="flex items-center justify-between gap-4">
-          <Link href={homeHref} aria-label="SeuReview - Início" className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <Link href={homeHref} aria-label="Início" className="flex items-center gap-2">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#EE4D2D] text-white font-bold">
               SR
             </span>
             <span className="font-semibold text-gray-900">SeuReview</span>
           </Link>
 
-          {/* Desktop */}
-          <nav className="hidden md:flex items-center gap-6 text-sm">
-            {loggedIn &&
-              navPrivate.map((i) => (
-                <Link key={i.href} href={i.href} className="hover:text-gray-800">
-                  {i.label}
-                </Link>
-              ))}
-          </nav>
-
           <div className="hidden sm:flex items-center gap-2">
+            <a
+              href={SITE_URL}
+              target="_blank"
+              rel="noopener"
+              className="btn btn-ghost"
+            >
+              Voltar ao site
+            </a>
             {loggedIn ? (
               <>
                 <Link href="/dashboard/shopee" className="btn btn-ghost">Painel</Link>
@@ -78,9 +69,8 @@ export default function Header({ initialLoggedIn = false }: Props) {
             )}
           </div>
 
-          {/* Mobile toggle */}
           <button
-            className="md:hidden inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+            className="sm:hidden inline-flex items-center justify-center rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
             onClick={() => setOpen((v) => !v)}
             aria-label="Abrir menu"
           >
@@ -89,43 +79,50 @@ export default function Header({ initialLoggedIn = false }: Props) {
         </div>
 
         {/* Mobile */}
-        <div className={cx("md:hidden transition-all overflow-hidden", open ? "max-h-[60vh] mt-3" : "max-h-0")}>
-          <div className="flex flex-col gap-2 border-t pt-3">
-            {loggedIn &&
-              navPrivate.map((i) => (
+        {open && (
+          <div className="sm:hidden mt-3 border-t pt-3 space-y-2">
+            <a
+              href={SITE_URL}
+              target="_blank"
+              rel="noopener"
+              className="px-2 py-2 rounded-lg hover:bg-gray-50 text-sm block"
+              onClick={() => setOpen(false)}
+            >
+              Voltar ao site
+            </a>
+            {loggedIn ? (
+              <>
                 <Link
-                  key={i.href}
-                  href={i.href}
-                  className="px-2 py-2 rounded-lg hover:bg-gray-50 text-sm"
+                  href="/dashboard/shopee"
+                  className="btn btn-ghost w-full"
                   onClick={() => setOpen(false)}
                 >
-                  {i.label}
+                  Painel
                 </Link>
-              ))}
-
-            <div className="flex items-center gap-2 pt-2">
-              {loggedIn ? (
-                <>
-                  <Link href="/dashboard/shopee" className="btn btn-ghost w-full" onClick={() => setOpen(false)}>
-                    Painel
-                  </Link>
-                  <button onClick={logout} className="btn btn-primary w-full">
-                    Sair
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Link href="/login" className="btn btn-ghost w-full" onClick={() => setOpen(false)}>
-                    Entrar
-                  </Link>
-                  <Link href="/signup" className="btn btn-primary w-full" onClick={() => setOpen(false)}>
-                    Criar conta
-                  </Link>
-                </>
-              )}
-            </div>
+                <button onClick={logout} className="btn btn-primary w-full">
+                  Sair
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="btn btn-ghost w-full"
+                  onClick={() => setOpen(false)}
+                >
+                  Entrar
+                </Link>
+                <Link
+                  href="/signup"
+                  className="btn btn-primary w-full"
+                  onClick={() => setOpen(false)}
+                >
+                  Criar conta
+                </Link>
+              </>
+            )}
           </div>
-        </div>
+        )}
       </div>
     </header>
   );
