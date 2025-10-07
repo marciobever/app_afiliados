@@ -2,7 +2,7 @@
 
 import React from 'react';
 import ComposerDrawer from './ComposerDrawer';
-import { Card, CardHeader, CardBody, Button, Input, Badge } from '@/components/ui';
+import { Card, CardHeader, CardBody, Button, Input } from '@/components/ui';
 import { Star, Percent, TrendingUp, ChevronDown, Check } from 'lucide-react';
 
 type ApiItem = {
@@ -12,11 +12,12 @@ type ApiItem = {
   rating: number;
   image: string;
   url: string;
-  commissionPercent?: number; // 12 -> 12%
-  commissionAmount?: number;  // 8.9 -> R$
+  commissionPercent?: number; // 12 => 12%
+  commissionAmount?: number;  // 8.9 => R$
   salesCount?: number;        // 1543
 };
 
+/* --------------------------------- utils --------------------------------- */
 function formatPrice(n?: number) {
   const v = Number(n ?? 0);
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -25,8 +26,6 @@ function formatPercent(n?: number) {
   const v = Number(n ?? 0);
   return `${v.toFixed(0)}%`;
 }
-
-/* ------------------------ helpers de ordenação ------------------------ */
 function commissionAmountOf(p: ApiItem) {
   if (typeof p.commissionAmount === 'number') return p.commissionAmount;
   if (typeof p.commissionPercent === 'number' && p.price > 0) {
@@ -42,6 +41,17 @@ function commissionPercentOf(p: ApiItem) {
   return 0;
 }
 
+/* micro chip (bem discreto) */
+function Micro({
+  children,
+}: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-[#FFD9CF] bg-[#FFF9F7] px-2 py-0.5 text-[11px] text-[#374151]">
+      {children}
+    </span>
+  );
+}
+
 /* ---------------------------- Card do produto ---------------------------- */
 function ProductCard({
   product,
@@ -52,16 +62,12 @@ function ProductCard({
   selected?: boolean;
   onSelectAndCompose: () => void;
 }) {
-  const hasAmount = typeof product.commissionAmount === 'number';
-  const hasPercent = typeof product.commissionPercent === 'number';
-  const commissionText =
-    hasAmount && hasPercent
-      ? `Comissão ${formatPrice(product.commissionAmount)} (${formatPercent(product.commissionPercent)})`
-      : hasAmount
-      ? `Comissão ${formatPrice(product.commissionAmount)}`
-      : hasPercent
-      ? `Comissão ${formatPercent(product.commissionPercent)}`
-      : '';
+  // texto compacto da comissão (prioriza %; se não tiver, mostra R$; se tiver ambos, mostra “% • R$”)
+  const hasPct = typeof product.commissionPercent === 'number';
+  const hasAmt = typeof product.commissionAmount === 'number';
+  const pctText = hasPct ? formatPercent(product.commissionPercent) : null;
+  const amtText = hasAmt ? formatPrice(product.commissionAmount) : null;
+  const commissionCompact = hasPct ? (amtText ? `${pctText} • ${amtText}` : pctText) : amtText;
 
   return (
     <Card className="overflow-hidden">
@@ -75,35 +81,31 @@ function ProductCard({
       </div>
 
       <CardBody className="space-y-3">
-        <div className="space-y-1">
-          <h3 className="text-sm font-semibold text-[#111827] line-clamp-2">
-            {product.title}
-          </h3>
+        <h3 className="text-sm font-semibold text-[#111827] line-clamp-2">{product.title}</h3>
 
-          <div className="flex items-center justify-between">
-            <div className="inline-flex items-center gap-1 text-[#6B7280] text-sm">
-              <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-              <span>{Number(product.rating || 0).toFixed(1)}</span>
-            </div>
-            <div className="text-sm font-semibold">
-              {formatPrice(product.price)}
-            </div>
+        {/* linha: rating à esquerda / preço à direita com metadados abaixo */}
+        <div className="flex items-start justify-between">
+          <div className="inline-flex items-center gap-1 text-[#6B7280] text-sm">
+            <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+            <span>{Number(product.rating || 0).toFixed(1)}</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            {commissionText && (
-              <Badge tone="success" className="inline-flex items-center gap-1">
-                <Percent className="w-3 h-3" />
-                {commissionText}
-              </Badge>
-            )}
-
-            {typeof product.salesCount === 'number' && (
-              <Badge className="inline-flex items-center gap-1">
-                <TrendingUp className="w-3 h-3" />
-                {product.salesCount.toLocaleString('pt-BR')} vendas
-              </Badge>
-            )}
+          <div className="text-right">
+            <div className="text-sm font-semibold">{formatPrice(product.price)}</div>
+            <div className="mt-1 flex items-center justify-end gap-2">
+              {commissionCompact && (
+                <Micro>
+                  <Percent className="w-3 h-3" />
+                  {commissionCompact}
+                </Micro>
+              )}
+              {typeof product.salesCount === 'number' && (
+                <Micro>
+                  <TrendingUp className="w-3 h-3" />
+                  {product.salesCount.toLocaleString('pt-BR')} vendas
+                </Micro>
+              )}
+            </div>
           </div>
         </div>
 
@@ -130,7 +132,7 @@ type SortKey =
   | 'priceDesc'
   | 'priceAsc';
 
-const SORT_OPTIONS: { key: SortKey; label: string; hint?: string }[] = [
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'relevance',     label: 'Relevância' },
   { key: 'commission',    label: 'Comissão (R$) — maior' },
   { key: 'commissionPct', label: 'Comissão (%) — maior' },
@@ -188,7 +190,7 @@ function SortControl({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 mt-2 w-60 rounded-xl border border-[#FFD9CF] bg-white shadow-lg overflow-hidden z-10"
+          className="absolute right-0 mt-2 w-64 rounded-xl border border-[#FFD9CF] bg-white shadow-lg overflow-hidden z-[999]"
         >
           <div className="p-1">
             {SORT_OPTIONS.map((o) => {
@@ -207,10 +209,11 @@ function SortControl({
                     active ? 'bg-[#EE4D2D] text-white' : 'hover:bg-[#FFF4F0] text-[#111827]',
                   ].join(' ')}
                 >
-                  <span className={[
-                    'inline-flex items-center justify-center w-4 h-4 rounded-full border',
-                    active ? 'border-white bg-white/20' : 'border-[#FFD9CF]',
-                  ].join(' ')}
+                  <span
+                    className={[
+                      'inline-flex items-center justify-center w-4 h-4 rounded-full border',
+                      active ? 'border-white bg-white/20' : 'border-[#FFD9CF]',
+                    ].join(' ')}
                   >
                     {active && <Check className="w-3 h-3" />}
                   </span>
@@ -333,20 +336,13 @@ export default function Products({
   const sorted = React.useMemo(() => {
     const base = items.slice();
     switch (sortBy) {
-      case 'commission':
-        return base.sort((a, b) => commissionAmountOf(b) - commissionAmountOf(a));
-      case 'commissionPct':
-        return base.sort((a, b) => commissionPercentOf(b) - commissionPercentOf(a));
-      case 'sales':
-        return base.sort((a, b) => (b.salesCount ?? 0) - (a.salesCount ?? 0));
-      case 'rating':
-        return base.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-      case 'priceDesc':
-        return base.sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
-      case 'priceAsc':
-        return base.sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
-      default:
-        return base; // relevância
+      case 'commission':    return base.sort((a, b) => commissionAmountOf(b) - commissionAmountOf(a));
+      case 'commissionPct': return base.sort((a, b) => commissionPercentOf(b) - commissionPercentOf(a));
+      case 'sales':         return base.sort((a, b) => (b.salesCount ?? 0) - (a.salesCount ?? 0));
+      case 'rating':        return base.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+      case 'priceDesc':     return base.sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
+      case 'priceAsc':      return base.sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+      default:              return base; // relevância
     }
   }, [items, sortBy]);
 
@@ -354,6 +350,7 @@ export default function Products({
     <section className="space-y-4">
       <Card>
         <CardHeader
+          className="relative overflow-visible"
           title="Filtrar/Buscar"
           subtitle="Digite o que procura e clique em Buscar para carregar os produtos."
           right={
