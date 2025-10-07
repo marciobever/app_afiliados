@@ -17,7 +17,7 @@ ARG NEXT_PUBLIC_META_APP_ID
 ENV NEXT_PUBLIC_META_APP_ID=${NEXT_PUBLIC_META_APP_ID}
 
 # Gera o bundle de produção (standalone)
-RUN npm run build
+RUN npm install
 
 # ---------- runtime ----------
 FROM node:20-alpine AS runtime
