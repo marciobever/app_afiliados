@@ -1,6 +1,7 @@
+// app/dashboard/shopee/ComposerDrawer/index.tsx
 'use client';
 
-import React from 'react';
+import * as React from 'react';
 import {
   X as XIcon,
   Loader2,
@@ -14,8 +15,6 @@ import {
   cx,
   stripFences,
   ensureSafeProduct,
-  localToIsoUtc,
-  dtLocalPlus,
   IG_TEMPLATES,
   FB_TEMPLATES,
 } from './utils';
@@ -29,36 +28,33 @@ import {
   CaptionEditor,
 } from './ui';
 
-/* ========================= chamadas backend ========================= */
+/* =======================================================
+   Funções de backend (mesmas rotas do projeto)
+   ======================================================= */
 
-/** Link com SubIDs (n8n /webhook/shopee_subids via nosso proxy) */
+/** Monta shortlink com SubIDs via nosso proxy para o n8n */
 async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: Product) {
   const safeProduct = ensureSafeProduct(baseUrl, product);
   const r = await fetch('/api/integrations/shopee/track', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({ base_url: baseUrl, platform, product: safeProduct }),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || (j as any).error)
+  if (!r.ok || (j as any).error) {
     throw new Error((j as any).message || (j as any).error || 'Falha ao montar SubIDs');
+  }
   return { url: ((j as any).url as string) || '' };
 }
 
 /** Gera legenda via IA (n8n /webhook/caption via /api/caption) */
-async function fetchCaption(
-  kind: 'instagram_caption' | 'facebook_caption',
-  payload: any,
-) {
+async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payload: any) {
   const r = await fetch('/api/caption', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/plain;q=0.9,*/*;q=0.8',
-    },
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain;q=0.9,*/*;q=0.8' },
     body: JSON.stringify({ kind, ...payload }),
   });
-  let text = await r.text();
+  const text = await r.text();
   let data: any;
   try {
     data = JSON.parse(text);
@@ -69,14 +65,16 @@ async function fetchCaption(
       data = { raw: text };
     }
   }
-  if (!r.ok || data?.error) throw new Error(data?.message || data?.error || `Falha ao gerar legenda`);
+  if (!r.ok || data?.error) {
+    throw new Error(data?.message || data?.error || 'Falha ao gerar legenda');
+  }
   const root = Array.isArray(data) ? data[0] : data;
   const variants = root?.variants ?? data?.variants ?? [];
   const keyword = root?.keyword ?? payload?.keyword ?? 'oferta';
   return { variants, keyword };
 }
 
-/** Publica/agenda via nossa API Next (proxy p/ n8n). Enviamos link e scheduleTime (UTC ISO). */
+/** Publica/agenda via nossa API Next (proxy para n8n). Enviamos `link` e `trackedUrl`. */
 async function publishToSocial({
   platform,
   product,
@@ -91,27 +89,26 @@ async function publishToSocial({
   scheduleTime?: string;
 }) {
   const safeProduct = ensureSafeProduct(product.url, product);
+
   const payload = {
     platform,
     product: safeProduct,
-    link: trackedUrl, // compat antigo
-    trackedUrl,
+    link: trackedUrl,         // compat com workflow antigo
+    trackedUrl,               // compat com mapeamento novo
     caption,
-    scheduleTime: scheduleTime || null,
+    scheduleTime: scheduleTime || null, // ISO UTC se agendado
   };
+
   const res = await fetch('/api/integrations/n8n/publish', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/plain;q=0.9,*/*;q=0.8',
-    },
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain;q=0.9,*/*;q=0.8' },
     body: JSON.stringify(payload),
   });
+
   const raw = await res.text();
   let data: any = null;
-  try {
-    data = raw ? JSON.parse(raw) : null;
-  } catch {}
+  try { data = raw ? JSON.parse(raw) : null; } catch {}
+
   if (!res.ok || (data && data.error)) {
     const msg =
       (data && (data.message || data.error)) ||
@@ -122,7 +119,33 @@ async function publishToSocial({
   return data || { ok: true, raw };
 }
 
-/* ========================= componente ========================= */
+/* =======================================================
+   Helpers locais
+   ======================================================= */
+
+const pad = (n: number) => String(n).padStart(2, '0');
+const fmtDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const fmtTime = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+/** Converte "YYYY-MM-DDTHH:mm" interpretado como LOCAL para ISO UTC (Z) */
+function localToIsoUtc(localDateTime: string) {
+  // new Date('YYYY-MM-DDTHH:mm') é interpretado como horário local no browser
+  const d = new Date(localDateTime);
+  if (isNaN(d.getTime())) return '';
+  return new Date(Date.UTC(
+    d.getFullYear(),
+    d.getMonth(),
+    d.getDate(),
+    d.getHours(),
+    d.getMinutes(),
+    0,
+    0,
+  )).toISOString();
+}
+
+/* =======================================================
+   Componente principal
+   ======================================================= */
 
 export default function ComposerDrawer({
   open,
@@ -133,23 +156,21 @@ export default function ComposerDrawer({
   onClose: () => void;
   product: Product | null;
 }) {
-  // scroll lock
+  // Bloqueia scroll do body ao abrir
   React.useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return () => { document.body.style.overflow = prev; };
   }, [open]);
 
-  // subids cache básico
-  const [subids, setSubids] = React.useState<{
-    by_platform: Record<string, string>;
-    default: string;
-  }>({ by_platform: {}, default: '' });
+  // SubIDs (mostramos qual está ativo)
+  const [subids, setSubids] = React.useState<{ by_platform: Record<string, string>; default: string }>({
+    by_platform: {},
+    default: '',
+  });
 
-  // plataforma + IG keyword
+  // plataforma + keyword (IG)
   const [platform, setPlatform] = React.useState<PlatformKey>('facebook');
   const [igKeyword, setIgKeyword] = React.useState<string>('oferta');
 
@@ -164,22 +185,20 @@ export default function ComposerDrawer({
   const [igTemplateKey, setIgTemplateKey] = React.useState<string>(IG_TEMPLATES[0].key);
   const [fbTemplateKey, setFbTemplateKey] = React.useState<string>(FB_TEMPLATES[0].key);
 
-  // agendamento
+  // agendamento (agora com data/hora separados)
   const [mode, setMode] = React.useState<'now' | 'schedule'>('now');
-  const [dtLocal, setDtLocal] = React.useState<string>(dtLocalPlus(15)); // default +15m
-  const minDt = dtLocalPlus(1); // pelo menos +1m
 
-  // preview UTC
-  const scheduleIsoPreview = React.useMemo(() => {
-    if (!dtLocal) return '';
-    try {
-      return localToIsoUtc(dtLocal);
-    } catch {
-      return '';
-    }
-  }, [dtLocal]);
+  const now = new Date();
+  const plus15 = new Date(now.getTime() + 15 * 60 * 1000);
 
-  // carrega subids
+  const [date, setDate] = React.useState<string>(fmtDate(now));     // YYYY-MM-DD
+  const [time, setTime] = React.useState<string>(fmtTime(plus15));  // HH:mm
+
+  const minDate = fmtDate(now);                         // não permitir datas passadas
+  const minTimeHint = fmtTime(new Date(now.getTime() + 60 * 1000)); // dica “min +1min”
+  const tzLabel = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Horário local';
+
+  // Carrega SubIDs quando abrir
   React.useEffect(() => {
     if (!open) return;
     let alive = true;
@@ -195,12 +214,10 @@ export default function ComposerDrawer({
         });
       } catch {}
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [open]);
 
-  // gera shortlink a cada abertura/troca de plataforma
+  // Gera shortlink sempre que abrir/mudar plataforma
   React.useEffect(() => {
     if (!open || !product) return;
     let alive = true;
@@ -219,22 +236,18 @@ export default function ComposerDrawer({
         if (alive) setBusyLink(false);
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [open, product, platform]);
 
-  // aplicar modelo pronto
+  // Aplicar modelo pronto (sem IA)
   function applyTemplate() {
     if (!product) return;
     const safeProduct = ensureSafeProduct(product.url, product);
     if (platform === 'instagram') {
-      const tpl =
-        IG_TEMPLATES.find((t) => t.key === igTemplateKey) || IG_TEMPLATES[0];
+      const tpl = IG_TEMPLATES.find(t => t.key === igTemplateKey) || IG_TEMPLATES[0];
       setCaption(tpl.build(safeProduct, trackedUrl || safeProduct.url, igKeyword));
     } else {
-      const tpl =
-        FB_TEMPLATES.find((t) => t.key === fbTemplateKey) || FB_TEMPLATES[0];
+      const tpl = FB_TEMPLATES.find(t => t.key === fbTemplateKey) || FB_TEMPLATES[0];
       setCaption(tpl.build(safeProduct, trackedUrl || safeProduct.url));
     }
   }
@@ -260,10 +273,7 @@ export default function ComposerDrawer({
               Array.isArray(v.cta_lines) ? v.cta_lines.join('\n').trim() : '',
               Array.isArray(v.hashtags) ? v.hashtags.join(' ').trim() : '',
             ].filter(Boolean)
-          : [
-              `${safeProduct.title}`,
-              `Confira aqui 👉 ${trackedUrl || safeProduct.url}`,
-            ];
+          : [`${safeProduct.title}`, `Confira aqui 👉 ${trackedUrl || safeProduct.url}`];
         setCaption(parts.join('\n\n').replace(/\{keyword\}/gi, keyword));
       } else {
         const { variants } = await fetchCaption('facebook_caption', {
@@ -271,33 +281,19 @@ export default function ComposerDrawer({
           style: 'Minimal',
         });
         const v = Array.isArray(variants) && variants.length ? variants[0] : null;
-        const bullets = v?.bullets?.length
-          ? v.bullets
-              .map((b: string) => (b.startsWith('•') ? b : `• ${b}`))
-              .join('\n')
-              .trim()
-          : '';
+        const bullets =
+          v?.bullets?.length
+            ? v.bullets.map((b: string) => (b.startsWith('•') ? b : `• ${b}`)).join('\n').trim()
+            : '';
         const parts = v
-          ? [
-              (v.title || '').trim(),
-              (v.intro || '').trim(),
-              bullets,
-              (v.cta || '').trim(),
-              (v.hashtags || []).join(' '),
-            ].filter(Boolean)
-          : [
-              `${safeProduct.title}`,
-              `Confira aqui 👉 ${trackedUrl || safeProduct.url}`,
-            ];
+          ? [(v.title || '').trim(), (v.intro || '').trim(), bullets, (v.cta || '').trim(), (v.hashtags || []).join(' ')]
+              .filter(Boolean)
+          : [`${safeProduct.title}`, `Confira aqui 👉 ${trackedUrl || safeProduct.url}`];
         setCaption(parts.join('\n\n'));
       }
     } catch (e: any) {
       const safeProduct = ensureSafeProduct(product?.url || '', product!);
-      setCaption(
-        `${safeProduct.title}\n\nConfira aqui 👉 ${
-          trackedUrl || safeProduct.url
-        }`,
-      );
+      setCaption(`${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl || safeProduct.url}`);
       setErrMsg(e?.message || 'Falha ao gerar legenda');
     } finally {
       setBusyCaption(false);
@@ -311,23 +307,22 @@ export default function ComposerDrawer({
       return;
     }
     const safeProduct = ensureSafeProduct(product.url, product);
-    const finalCaption = (
-      caption || `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl}`
-    ).trim();
+    const finalCaption = (caption || `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl}`).trim();
 
     let scheduleIso: string | undefined = undefined;
     if (mode === 'schedule') {
-      if (!dtLocal) {
-        setErrMsg('Escolha uma data e um horário para agendar.');
+      if (!date || !time) {
+        setErrMsg('Escolha data e hora para agendar.');
         return;
       }
-      const whenTs = new Date(dtLocal).getTime(); // interpreta LOCAL
-      const minTs = Date.now() + 60_000; // >= +1 min
-      if (!Number.isFinite(whenTs) || whenTs < minTs) {
-        setErrMsg('Escolha um horário no futuro (mínimo +1min).');
+      const localCombined = `${date}T${time}`;
+      const when = new Date(localCombined);                 // horário local
+      const minWhen = new Date(Date.now() + 60 * 1000);     // mínimo +1min
+      if (isNaN(when.getTime()) || when < minWhen) {
+        setErrMsg('Escolha um horário no futuro (mínimo +1 minuto).');
         return;
       }
-      scheduleIso = localToIsoUtc(dtLocal); // envia em UTC
+      scheduleIso = localToIsoUtc(localCombined);           // envia UTC ISO
     }
 
     try {
@@ -350,19 +345,11 @@ export default function ComposerDrawer({
   if (!open || !product) return null;
 
   const publishDisabled = !trackedUrl || busyLink || busyCaption;
-  const availablePlatforms: PlatformKey[] = [
-    'facebook',
-    'instagram',
-    'x',
-  ] as PlatformKey[];
+  const availablePlatforms: PlatformKey[] = (['facebook','instagram','x'] as PlatformKey[]);
   const activeSubId = subids.by_platform[platform] || subids.default || '';
 
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-stretch justify-end"
-      aria-modal="true"
-      role="dialog"
-    >
+    <div className="fixed inset-0 z-[9999] flex items-stretch justify-end" aria-modal="true" role="dialog">
       {/* backdrop */}
       <div className="absolute inset-0 bg-black/45" onClick={onClose} />
 
@@ -386,11 +373,7 @@ export default function ComposerDrawer({
               disabled={busyLink || busyCaption}
               className="hidden md:flex"
             />
-            <button
-              className="p-2 rounded hover:bg-[#FFF4F0]"
-              aria-label="Fechar"
-              onClick={onClose}
-            >
+            <button className="p-2 rounded hover:bg-[#FFF4F0]" aria-label="Fechar" onClick={onClose}>
               <XIcon className="w-5 h-5" />
             </button>
           </div>
@@ -399,7 +382,7 @@ export default function ComposerDrawer({
         {/* Body */}
         <div className="flex-1 overflow-auto px-4 md:px-6 py-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Coluna esquerda */}
+            {/* Esquerda */}
             <div className="space-y-4">
               <ProductSummary product={product} />
 
@@ -413,10 +396,7 @@ export default function ComposerDrawer({
                   disabled={busyLink || busyCaption}
                 />
                 <p className="text-[11px] text-[#6B7280]">
-                  SubID ativo:{' '}
-                  <span className="font-medium">
-                    {activeSubId || '(padrão vazio)'}
-                  </span>
+                  SubID ativo: <span className="font-medium">{activeSubId || '(padrão vazio)'}</span>
                 </p>
               </SectionCard>
 
@@ -425,42 +405,29 @@ export default function ComposerDrawer({
               <ScheduleBox
                 mode={mode}
                 setMode={setMode}
-                dtLocal={dtLocal}
-                setDtLocal={setDtLocal}
-                minDt={minDt}
+                date={date}
+                time={time}
+                setDate={setDate}
+                setTime={setTime}
+                minDate={minDate}
+                minTimeHint={minTimeHint}
+                tzLabel={tzLabel}
               />
-
-              {mode === 'schedule' && (
-                <SectionCard className="text-[12px] text-[#374151]">
-                  <div className="font-medium mb-1">Confirmação de horário</div>
-                  <div>
-                    Local:&nbsp;<b>{dtLocal || '—'}</b>
-                  </div>
-                  <div>
-                    UTC:&nbsp;<b>{scheduleIsoPreview || '—'}</b>
-                  </div>
-                </SectionCard>
-              )}
             </div>
 
-            {/* Coluna direita */}
+            {/* Direita */}
             <div className="space-y-4">
               {/* Modelos & IA */}
               <SectionCard className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium">Modelos & IA</div>
-                  <div className="text-[11px] text-[#6B7280]">
-                    Plataforma:{' '}
-                    <b>{platform === 'x' ? 'X' : platform}</b>
-                  </div>
+                  <div className="text-[11px] text-[#6B7280]">Plataforma: <b>{platform === 'x' ? 'X' : platform}</b></div>
                 </div>
 
                 {platform === 'instagram' ? (
                   <div className="grid gap-3">
                     <div>
-                      <label className="text-sm font-medium text-[#374151]">
-                        Keyword (Instagram)
-                      </label>
+                      <label className="text-sm font-medium text-[#374151]">Keyword (Instagram)</label>
                       <input
                         className="mt-1 w-full border border-[#FFD9CF] rounded-lg px-3 py-2 text-sm"
                         placeholder="ex.: oferta, novidade, achado, lançamento…"
@@ -470,18 +437,14 @@ export default function ComposerDrawer({
                     </div>
 
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-medium text-[#374151]">
-                        Modelo pronto
-                      </div>
+                      <div className="text-sm font-medium text-[#374151]">Modelo pronto</div>
                       <select
                         className="border border-[#FFD9CF] rounded-lg px-2 py-1 text-xs"
                         value={igTemplateKey}
                         onChange={(e) => setIgTemplateKey(e.target.value)}
                       >
-                        {IG_TEMPLATES.map((t) => (
-                          <option key={t.key} value={t.key}>
-                            {t.label}
-                          </option>
+                        {IG_TEMPLATES.map(t => (
+                          <option key={t.key} value={t.key}>{t.label}</option>
                         ))}
                       </select>
                     </div>
@@ -499,15 +462,11 @@ export default function ComposerDrawer({
                         className={cx(
                           'inline-flex items-center gap-1.5 rounded-md text-xs px-3 py-1.5 border',
                           'border-[#FFD9CF] bg-white hover:bg-[#FFF4F0] text-[#1F2937]',
-                          busyCaption && 'opacity-60 cursor-not-allowed',
+                          busyCaption && 'opacity-60 cursor-not-allowed'
                         )}
                         title="Gerar legenda com IA"
                       >
-                        {busyCaption ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Wand2 className="w-3.5 h-3.5" />
-                        )}
+                        {busyCaption ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
                         {busyCaption ? 'Gerando…' : 'Gerar com IA'}
                       </button>
                     </div>
@@ -515,21 +474,18 @@ export default function ComposerDrawer({
                 ) : (
                   <div className="grid gap-3">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-medium text-[#374151]">
-                        Modelo pronto
-                      </div>
+                      <div className="text-sm font-medium text-[#374151]">Modelo pronto</div>
                       <select
                         className="border border-[#FFD9CF] rounded-lg px-2 py-1 text-xs"
                         value={fbTemplateKey}
                         onChange={(e) => setFbTemplateKey(e.target.value)}
                       >
-                        {FB_TEMPLATES.map((t) => (
-                          <option key={t.key} value={t.key}>
-                            {t.label}
-                          </option>
+                        {FB_TEMPLATES.map(t => (
+                          <option key={t.key} value={t.key}>{t.label}</option>
                         ))}
                       </select>
                     </div>
+
                     <div>
                       <button
                         onClick={applyTemplate}
@@ -542,7 +498,6 @@ export default function ComposerDrawer({
                 )}
               </SectionCard>
 
-              {/* Editor de legenda */}
               <CaptionEditor
                 caption={caption}
                 setCaption={setCaption}
@@ -552,39 +507,44 @@ export default function ComposerDrawer({
                     : 'Use um modelo pronto ou escreva aqui sua legenda.'
                 }
               />
+
+              {/* Erro */}
+              {errMsg && (
+                <SectionCard>
+                  <div className="p-2 text-xs rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
+                    {errMsg}
+                  </div>
+                </SectionCard>
+              )}
             </div>
           </div>
-
-          {/* Erro */}
-          {errMsg && (
-            <div className="mt-4 p-2 text-xs rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
-              {errMsg}
-            </div>
-          )}
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t flex justify-end gap-2">
-          <button
-            className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]"
-            onClick={onClose}
-          >
+        <div className="sticky bottom-0 z-10 px-4 md:px-6 py-3 border-t bg-white/90 backdrop-blur flex justify-end gap-2">
+          <button className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]" onClick={onClose}>
             Cancelar
           </button>
           <button
-            className={cx(
-              'px-4 py-2 rounded-lg text-white flex items-center gap-2 disabled:opacity-60',
-              mode === 'schedule'
-                ? 'bg-[#111827] hover:bg-[#1f2937]'
-                : 'bg-[#EE4D2D] hover:bg-[#D8431F]',
-            )}
+            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
             disabled={publishDisabled}
-            onClick={handleSubmit}
+            onClick={() => {
+              setMode('now');
+              handleSubmit();
+            }}
           >
-            {(busyLink || busyCaption) && (
-              <Loader2 className="animate-spin w-4 h-4" />
-            )}
-            {mode === 'schedule' ? 'Agendar' : 'Publicar agora'}
+            {busyLink || busyCaption ? <Loader2 className="animate-spin w-4 h-4" /> : null}
+            Publicar
+          </button>
+          <button
+            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
+            disabled={publishDisabled}
+            onClick={() => {
+              setMode('schedule');
+              handleSubmit();
+            }}
+          >
+            Agendar
           </button>
         </div>
       </aside>
