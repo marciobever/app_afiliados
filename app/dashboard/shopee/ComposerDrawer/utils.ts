@@ -1,5 +1,4 @@
 // app/dashboard/shopee/ComposerDrawer/utils.ts
-'use client';
 
 export type PlatformKey = 'facebook' | 'instagram' | 'x';
 
@@ -12,10 +11,12 @@ export type Product = {
   url: string;
 };
 
+// classes util
 export function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
 
+// remove cercas de ```json
 export function stripFences(s: string) {
   return String(s)
     .trim()
@@ -25,7 +26,6 @@ export function stripFences(s: string) {
     .trim();
 }
 
-/** Deriva ID Shopee a partir da URL (shopId_itemId) */
 export function deriveShopeeIdFromUrl(url?: string): string {
   if (!url) return '';
   try {
@@ -39,7 +39,6 @@ export function deriveShopeeIdFromUrl(url?: string): string {
   return '';
 }
 
-/** Normaliza/garante product completo antes de enviar ao backend */
 export function ensureSafeProduct(baseUrl: string, p?: Product | null): Product {
   const id =
     (p?.id && String(p.id)) ||
@@ -66,23 +65,21 @@ export function ensureSafeProduct(baseUrl: string, p?: Product | null): Product 
   };
 }
 
-/** Converte `YYYY-MM-DDTHH:mm` (local) para ISO UTC */
-export function localToIsoUtc(dtLocal: string): string {
-  if (!dtLocal) return '';
-  const d = new Date(dtLocal);
-  if (isNaN(d.getTime())) return '';
+// converte 'YYYY-MM-DDTHH:mm' local -> ISO UTC
+export function localToIsoUtc(local: string): string {
+  const d = new Date(local);
   return d.toISOString();
 }
 
-/** Retorna `YYYY-MM-DDTHH:mm` atual + offset minutos */
-export function dtLocalPlus(minutes = 0): string {
+// gera 'YYYY-MM-DDTHH:mm' local com +N minutos
+export function dtLocalPlus(minutes: number): string {
   const d = new Date();
   d.setMinutes(d.getMinutes() + minutes);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/* -------------------- templates -------------------- */
+/* -------------------- modelos prontos -------------------- */
 
 export const IG_TEMPLATES: Array<{ key: string; label: string; build: (p: Product, link: string, kw: string) => string }> = [
   {
@@ -118,7 +115,7 @@ ${p.title}
 
 ${kw ? `Palavra-chave: ${kw}\n` : ''}Veja mais 👉 ${link}
 
-#achados #viralizou`
+#boanoite #achados #viralizou`
   },
 ];
 
@@ -141,6 +138,6 @@ Confira 👉 ${link}`,
 • Bom retorno nas reviews
 • Link oficial: ${link}
 
-#promo #oferta`,
+#promo #oferta #facebook`,
   },
 ];
