@@ -1,51 +1,45 @@
 // app/dashboard/shopee/ComposerDrawer/ui.tsx
 'use client';
 
-import React from 'react';
-import { Copy, Check, CalendarClock } from 'lucide-react';
-import { cx, Product, PlatformKey, deriveShopeeIdFromUrl } from './utils';
+import * as React from 'react';
+import { Check, Copy, Loader2 } from 'lucide-react';
+import type { Product, PlatformKey } from './utils';
+import { cx } from './utils';
 
-export function SectionCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={cx('rounded-2xl border border-[#FFD9CF] p-3', className)}>{children}</div>;
-}
-
-export function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }) {
-  const [ok, setOk] = React.useState(false);
+/* ========================= base card ========================= */
+export function SectionCard({
+  className = '',
+  children,
+}: React.PropsWithChildren<{ className?: string }>) {
   return (
-    <button
-      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-[#FFD9CF] hover:bg-[#FFF4F0] text-xs disabled:opacity-50"
-      onClick={async () => {
-        await navigator.clipboard.writeText(text || '');
-        setOk(true);
-        setTimeout(() => setOk(false), 900);
-      }}
-      disabled={!text}
-    >
-      {ok ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-      {ok ? 'Copiado' : label}
-    </button>
+    <div className={cx(
+      'rounded-2xl border border-[#FFD9CF] bg-white/80 backdrop-blur p-3 md:p-4',
+      className
+    )}>
+      {children}
+    </div>
   );
 }
 
+/* ========================= product summary ========================= */
 export function ProductSummary({ product }: { product: Product }) {
   return (
     <SectionCard>
       <div className="flex gap-3">
-        <img src={product.image} alt="" className="w-20 h-20 rounded object-cover" />
+        <img src={product.image} alt="" className="w-20 h-20 rounded object-cover border" />
         <div className="min-w-0">
           <div className="font-medium line-clamp-2">{product.title}</div>
           {typeof product.price === 'number' && (
             <div className="text-sm text-gray-600">R$ {Number(product.price).toFixed(2)}</div>
           )}
-          <div className="text-xs text-gray-500">
-            ID: {product.id || deriveShopeeIdFromUrl(product.url)}
-          </div>
+          <div className="text-xs text-gray-500">ID: {product.id}</div>
         </div>
       </div>
     </SectionCard>
   );
 }
 
+/* ========================= platform selector ========================= */
 export function PlatformSelector({
   platforms,
   value,
@@ -66,131 +60,154 @@ export function PlatformSelector({
           key={p}
           onClick={() => onChange(p)}
           className={cx(
-            'px-3 py-1.5 rounded-full border text-xs',
+            'px-3 py-1.5 rounded-lg border text-sm',
             value === p ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]' : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
           )}
-          disabled={disabled}
-          title={`Plataforma: ${p}`}
+          disabled={!!disabled}
         >
-          {p === 'x' ? 'X' : p[0].toUpperCase() + p.slice(1)}
+          {p === 'x' ? 'X (Twitter)' : p[0].toUpperCase() + p.slice(1)}
         </button>
       ))}
     </div>
   );
 }
 
-export function LinkBox({
-  trackedUrl,
-  busy,
-}: {
-  trackedUrl: string;
-  busy: boolean;
-}) {
+/* ========================= copy button ========================= */
+function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }) {
+  const [ok, setOk] = React.useState(false);
   return (
-    <SectionCard className="space-y-2">
-      <div className="flex items-center justify-between">
+    <button
+      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-[#FFD9CF] hover:bg-[#FFF4F0] text-xs disabled:opacity-50"
+      onClick={async () => {
+        await navigator.clipboard.writeText(text || '');
+        setOk(true);
+        setTimeout(() => setOk(false), 900);
+      }}
+      disabled={!text}
+    >
+      {ok ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      {ok ? 'Copiado' : label}
+    </button>
+  );
+}
+
+/* ========================= link box ========================= */
+export function LinkBox({ trackedUrl, busy }: { trackedUrl: string; busy: boolean }) {
+  return (
+    <SectionCard>
+      <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-medium">Link rastreável</div>
-        {trackedUrl ? <CopyButton text={trackedUrl} label="Copiar link" /> : null}
-      </div>
-      <div className="text-xs text-[#6B7280]">
-        {busy ? 'Gerando link…' : trackedUrl ? 'Pronto.' : 'Sem link ainda.'}
+        {busy ? (
+          <span className="inline-flex items-center gap-1 text-xs text-[#6B7280]">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Gerando…
+          </span>
+        ) : trackedUrl ? (
+          <CopyButton text={trackedUrl} />
+        ) : null}
       </div>
       <input
-        className="w-full mt-2 border border-[#FFD9CF] rounded-lg px-3 py-2 text-sm"
+        className="mt-2 w-full border border-[#FFD9CF] rounded-lg px-3 py-2 text-sm bg-white"
         value={trackedUrl}
         readOnly
+        placeholder={busy ? 'Gerando…' : 'Sem link ainda'}
       />
+      <p className="mt-1 text-[11px] text-[#6B7280]">
+        Usado na publicação e salvo no banco para relatórios.
+      </p>
     </SectionCard>
   );
 }
 
+/* ========================= schedule box ========================= */
 export function ScheduleBox({
   mode,
   setMode,
   dtLocal,
   setDtLocal,
   minDt,
-  className = '',
 }: {
   mode: 'now' | 'schedule';
   setMode: (m: 'now' | 'schedule') => void;
   dtLocal: string;
   setDtLocal: (v: string) => void;
   minDt: string;
-  className?: string;
 }) {
   return (
-    <SectionCard className={cx('space-y-3', className)}>
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-medium">Publicação</div>
-        <div className="text-[11px] text-[#6B7280] flex items-center gap-1">
-          <CalendarClock className="w-3.5 h-3.5" />
-          Fuso local do navegador
-        </div>
-      </div>
-
-      <div className="flex gap-2">
+    <SectionCard className="space-y-2">
+      <div className="text-sm font-medium">Publicação</div>
+      <div className="flex gap-2 flex-wrap">
         <button
+          onClick={() => setMode('now')}
           className={cx(
-            'flex-1 px-3 py-2 rounded-lg border text-sm',
+            'px-3 py-1.5 rounded-lg border text-sm',
             mode === 'now' ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]' : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
           )}
-          onClick={() => setMode('now')}
         >
           Publicar agora
         </button>
         <button
+          onClick={() => setMode('schedule')}
           className={cx(
-            'flex-1 px-3 py-2 rounded-lg border text-sm',
+            'px-3 py-1.5 rounded-lg border text-sm',
             mode === 'schedule' ? 'bg-[#111827] text-white border-[#111827]' : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
           )}
-          onClick={() => setMode('schedule')}
         >
           Agendar
         </button>
       </div>
 
       {mode === 'schedule' && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Data e horário</label>
+        <div className="mt-2 grid gap-2">
+          <label className="text-xs text-gray-600">Data e hora (seu fuso)</label>
           <input
             type="datetime-local"
             className="w-full border border-[#FFD9CF] rounded-lg px-3 py-2 text-sm"
-            value={dtLocal}
             min={minDt}
+            value={dtLocal}
             onChange={(e) => setDtLocal(e.target.value)}
           />
+          <p className="text-[11px] text-[#6B7280]">
+            Será convertido para UTC ao enviar para o workflow.
+          </p>
         </div>
       )}
     </SectionCard>
   );
 }
 
+/* ========================= caption editor (opcional) ========================= */
 export function CaptionEditor({
   caption,
   setCaption,
-  busyCaption,
-  hint,
+  placeholder,
 }: {
   caption: string;
   setCaption: (v: string) => void;
-  busyCaption: boolean;
-  hint?: string;
+  placeholder?: string;
 }) {
   return (
     <SectionCard className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-medium">Legenda</div>
-        <CopyButton text={caption} label="Copiar legenda" />
-      </div>
-      {busyCaption && <div className="text-[11px] text-[#EE4D2D]">gerando…</div>}
+      <div className="text-sm font-medium">Legenda</div>
       <textarea
-        className="w-full border border-[#FFD9CF] rounded-lg p-2 text-sm min-h-[220px]"
+        className="w-full border border-[#FFD9CF] rounded-lg p-2 text-sm"
+        rows={10}
         value={caption}
         onChange={(e) => setCaption(e.target.value)}
-        placeholder={hint || 'Escreva sua legenda…'}
+        placeholder={placeholder || 'Escreva ou cole sua legenda…'}
       />
-      <p className="text-[11px] text-[#6B7280]">No Instagram, o link é tratado fora da legenda (shortlink).</p>
     </SectionCard>
+  );
+}
+
+/* ========================= quick pick ========================= */
+export function QuickPick({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="px-2.5 py-1.5 rounded-md border border-[#FFD9CF] bg-white hover:bg-[#FFF4F0] text-xs"
+    >
+      {label}
+    </button>
   );
 }
