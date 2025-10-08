@@ -31,9 +31,9 @@ import {
   QuickPick,
 } from './ui';
 
-/* =======================================================
- *  Chamada: n8n /webhook/shopee_subids (via proxy Next)
- * ======================================================= */
+/* ================== chamadas backend ================== */
+
+/** Link com SubIDs (n8n /webhook/shopee_subids via nosso proxy) */
 async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: Product) {
   const safeProduct = ensureSafeProduct(baseUrl, product);
   const r = await fetch('/api/integrations/shopee/track', {
@@ -42,24 +42,17 @@ async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: P
     body: JSON.stringify({ base_url: baseUrl, platform, product: safeProduct }),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || (j as any).error)
-    throw new Error((j as any).message || (j as any).error || 'Falha ao montar SubIDs');
+  if (!r.ok || (j as any).error) throw new Error((j as any).message || (j as any).error || 'Falha ao montar SubIDs');
   return { url: ((j as any).url as string) || '' };
 }
 
-/* =======================================================
- *  Chamada: n8n /webhook/caption (via /api/caption)
- * ======================================================= */
+/** Gera legenda via IA (n8n /webhook/caption via /api/caption) */
 async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payload: any) {
   const r = await fetch('/api/caption', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json, text/plain;q=0.9,*/*;q=0.8',
-    },
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain;q=0.9,*/*;q=0.8' },
     body: JSON.stringify({ kind, ...payload }),
   });
-
   let text = await r.text();
   let data: any;
   try {
@@ -71,21 +64,14 @@ async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payl
       data = { raw: text };
     }
   }
-
-  if (!r.ok || data?.error) {
-    throw new Error(data?.message || data?.error || `Falha ao gerar legenda`);
-  }
-
+  if (!r.ok || data?.error) throw new Error(data?.message || data?.error || `Falha ao gerar legenda`);
   const root = Array.isArray(data) ? data[0] : data;
   const variants = root?.variants ?? data?.variants ?? [];
   const keyword = root?.keyword ?? payload?.keyword ?? 'oferta';
   return { variants, keyword };
 }
 
-/* =======================================================
- *  Chamada: publicar/agendar (via /api/integrations/n8n/publish)
- *  Compat: envia `link` e `trackedUrl`
- * ======================================================= */
+/** Publica/agenda via nossa API Next (proxy para n8n) */
 async function publishToSocial({
   platform,
   product,
@@ -104,8 +90,8 @@ async function publishToSocial({
   const payload = {
     platform,
     product: safeProduct,
-    link: trackedUrl,                // compat workflow antigo
-    trackedUrl,                      // mapeamento novo
+    link: trackedUrl,         // compat com fluxo antigo
+    trackedUrl,
     caption,
     scheduleTime: scheduleTime || null, // ISO UTC se agendado
   };
@@ -130,9 +116,8 @@ async function publishToSocial({
   return data || { ok: true, raw };
 }
 
-/* =======================================================
- *  Componente principal
- * ======================================================= */
+/* ================== componente ================== */
+
 export default function ComposerDrawer({
   open,
   onClose,
@@ -142,7 +127,7 @@ export default function ComposerDrawer({
   onClose: () => void;
   product: Product | null;
 }) {
-  // Bloqueia o scroll do body ao abrir o drawer
+  // Bloqueia scroll do body ao abrir
   React.useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -150,31 +135,31 @@ export default function ComposerDrawer({
     return () => { document.body.style.overflow = prev; };
   }, [open]);
 
-  // SubIDs salvos
+  // SubIDs (só mostramos qual está ativo; fetch simples)
   const [subids, setSubids] = React.useState<{ by_platform: Record<string, string>; default: string }>({
     by_platform: {},
     default: '',
   });
 
-  // Plataforma + keyword (IG)
+  // plataforma + keyword (IG)
   const [platform, setPlatform] = React.useState<PlatformKey>('facebook');
   const [igKeyword, setIgKeyword] = React.useState<string>('oferta');
 
-  // Caption & link
+  // caption & link
   const [trackedUrl, setTrackedUrl] = React.useState('');
   const [caption, setCaption] = React.useState('');
   const [busyLink, setBusyLink] = React.useState(false);
   const [busyCaption, setBusyCaption] = React.useState(false);
   const [errMsg, setErrMsg] = React.useState<string | null>(null);
 
-  // Templates
+  // templates
   const [igTemplateKey, setIgTemplateKey] = React.useState<string>(IG_TEMPLATES[0].key);
   const [fbTemplateKey, setFbTemplateKey] = React.useState<string>(FB_TEMPLATES[0].key);
 
-  // Agendamento
+  // agendamento
   const [mode, setMode] = React.useState<'now' | 'schedule'>('now');
   const [dtLocal, setDtLocal] = React.useState<string>(dtLocalPlus(15)); // default +15m
-  const minDt = dtLocalPlus(1); // pelo menos +1min
+  const minDt = dtLocalPlus(1); // pelo menos +1m
 
   // Carrega SubIDs quando abrir
   React.useEffect(() => {
@@ -195,7 +180,7 @@ export default function ComposerDrawer({
     return () => { alive = false; };
   }, [open]);
 
-  // Gera shortlink sempre que abrir/mudar plataforma/produto
+  // Gera shortlink sempre que abrir/mudar plataforma
   React.useEffect(() => {
     if (!open || !product) return;
     let alive = true;
@@ -230,7 +215,6 @@ export default function ComposerDrawer({
     }
   }
 
-  // Gerar legenda com IA
   async function handleGenerateCaption() {
     if (!product) return;
     setBusyCaption(true);
@@ -256,7 +240,7 @@ export default function ComposerDrawer({
         setCaption(parts.join('\n\n').replace(/\{keyword\}/gi, keyword));
       } else {
         const { variants } = await fetchCaption('facebook_caption', {
-          products: [safeProduct],
+          products: [ensureSafeProduct(product.url, product)],
           style: 'Minimal',
         });
         const v = Array.isArray(variants) && variants.length ? variants[0] : null;
@@ -267,7 +251,7 @@ export default function ComposerDrawer({
         const parts = v
           ? [(v.title || '').trim(), (v.intro || '').trim(), bullets, (v.cta || '').trim(), (v.hashtags || []).join(' ')]
               .filter(Boolean)
-          : [`${safeProduct.title}`, `Confira aqui 👉 ${trackedUrl || safeProduct.url}`];
+          : [`${product.title}`, `Confira aqui 👉 ${trackedUrl || product.url}`];
         setCaption(parts.join('\n\n'));
       }
     } catch (e: any) {
@@ -279,7 +263,6 @@ export default function ComposerDrawer({
     }
   }
 
-  // Submit (publicar/agendar)
   async function handleSubmit() {
     if (!product) return;
     if (!trackedUrl) {
@@ -329,10 +312,10 @@ export default function ComposerDrawer({
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-stretch justify-end" aria-modal="true" role="dialog">
-      {/* Backdrop */}
+      {/* backdrop */}
       <div className="absolute inset-0 bg-black/45" onClick={onClose} />
 
-      {/* Drawer */}
+      {/* drawer */}
       <aside className="relative h-full w-full md:w-[980px] bg-white border-l shadow-2xl flex flex-col">
         {/* Header */}
         <div className="sticky top-0 z-10 px-4 md:px-6 py-3 border-b bg-white/90 backdrop-blur flex items-center justify-between">
@@ -361,7 +344,7 @@ export default function ComposerDrawer({
         {/* Body */}
         <div className="flex-1 overflow-auto px-4 md:px-6 py-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Coluna esquerda */}
+            {/* Esquerda */}
             <div className="space-y-4">
               <ProductSummary product={product} />
 
@@ -411,17 +394,10 @@ export default function ComposerDrawer({
               )}
             </div>
 
-            {/* Coluna direita */}
+            {/* Direita */}
             <div className="space-y-4">
               {/* Modelos & IA */}
-              <SectionCard className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-medium">Modelos & IA</div>
-                  <div className="text-[11px] text-[#6B7280]">
-                    Plataforma: <b>{platform === 'x' ? 'X' : platform}</b>
-                  </div>
-                </div>
-
+              <CaptionEditor platform={platform}>
                 {platform === 'instagram' ? (
                   <div className="grid gap-3">
                     <div>
@@ -493,55 +469,58 @@ export default function ComposerDrawer({
                     </div>
                   </div>
                 )}
-              </SectionCard>
+              </CaptionEditor>
 
               {/* Editor de legenda */}
-              <CaptionEditor
-                value={caption}
-                onChange={setCaption}
-                busy={busyCaption}
-                platform={platform}
-              />
-
-              {/* Erro geral */}
-              {errMsg && (
-                <div className="p-2 text-xs rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
-                  {errMsg}
+              <SectionCard className="space-y-1">
+                <div className="text-sm font-medium text-[#374151]">
+                  Legenda {busyCaption && <span className="ml-2 text-[11px] text-[#EE4D2D]">gerando…</span>}
                 </div>
-              )}
+                <textarea
+                  className="w-full border border-[#FFD9CF] rounded-lg p-2 text-sm"
+                  rows={10}
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  placeholder={
+                    platform === 'instagram'
+                      ? 'Use um modelo pronto ou clique em “Gerar com IA”.'
+                      : 'Use um modelo pronto ou escreva aqui sua legenda.'
+                  }
+                />
+              </SectionCard>
             </div>
           </div>
+
+          {/* Erro */}
+          {errMsg && (
+            <div className="mt-4 p-2 text-xs rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
+              {errMsg}
+            </div>
+          )}
         </div>
 
-        {/* Footer (fixo) */}
-        <div className="sticky bottom-0 z-10 px-4 md:px-6 py-3 border-t bg-white/90 backdrop-blur flex items-center justify-between">
-          <div className="text-[11px] text-[#6B7280]">
-            {mode === 'schedule'
-              ? `Agendado para: ${dtLocal ? new Date(dtLocal).toLocaleString() : '—'}`
-              : 'Publicação imediata'}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]"
-              onClick={onClose}
-            >
-              Cancelar
-            </button>
-            <button
-              className={cx(
-                'px-4 py-2 rounded-lg text-white flex items-center gap-2 disabled:opacity-60',
-                mode === 'schedule'
-                  ? 'bg-[#111827] hover:bg-[#1f2937]'
-                  : 'bg-[#EE4D2D] hover:bg-[#D8431F]'
-              )}
-              disabled={publishDisabled}
-              onClick={handleSubmit}
-            >
-              {busyLink || busyCaption ? <Loader2 className="animate-spin w-4 h-4" /> : null}
-              {mode === 'schedule' ? 'Agendar' : 'Publicar'}
-            </button>
-          </div>
+        {/* Footer */}
+        <div className="p-4 border-t flex justify-end gap-2">
+          <button className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]" onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
+            disabled={publishDisabled || mode === 'schedule'}
+            onClick={() => handleSubmit()}
+            title={mode === 'schedule' ? 'Troque para “Publicar agora”' : 'Publicar agora'}
+          >
+            {busyLink || busyCaption ? <Loader2 className="animate-spin w-4 h-4" /> : null}
+            Publicar
+          </button>
+          <button
+            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
+            disabled={publishDisabled || mode !== 'schedule'}
+            onClick={() => handleSubmit()}
+            title={mode !== 'schedule' ? 'Ative “Agendar” para habilitar' : 'Agendar'}
+          >
+            Agendar
+          </button>
         </div>
       </aside>
     </div>
