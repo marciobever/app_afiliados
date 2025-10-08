@@ -1,7 +1,7 @@
 // app/dashboard/shopee/ComposerDrawer/index.tsx
 'use client';
 
-import React from 'react';
+import * as React from 'react';
 import {
   X as XIcon,
   Loader2,
@@ -31,7 +31,9 @@ import {
   QuickPick,
 } from './ui';
 
-/* ================== chamadas backend ================== */
+/* =======================================================
+   Chamadas para o backend/proxy
+======================================================= */
 
 /** Link com SubIDs (n8n /webhook/shopee_subids via nosso proxy) */
 async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: Product) {
@@ -71,7 +73,7 @@ async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payl
   return { variants, keyword };
 }
 
-/** Publica/agenda via nossa API Next (proxy para n8n) */
+/** Publica/agenda via nossa API Next (proxy para n8n). Enviamos `link` e `trackedUrl`. */
 async function publishToSocial({
   platform,
   product,
@@ -90,8 +92,8 @@ async function publishToSocial({
   const payload = {
     platform,
     product: safeProduct,
-    link: trackedUrl,         // compat com fluxo antigo
-    trackedUrl,
+    link: trackedUrl,         // compat com workflow antigo
+    trackedUrl,               // compat com mapeamento novo
     caption,
     scheduleTime: scheduleTime || null, // ISO UTC se agendado
   };
@@ -116,7 +118,9 @@ async function publishToSocial({
   return data || { ok: true, raw };
 }
 
-/* ================== componente ================== */
+/* =======================================================
+   Componente
+======================================================= */
 
 export default function ComposerDrawer({
   open,
@@ -397,7 +401,12 @@ export default function ComposerDrawer({
             {/* Direita */}
             <div className="space-y-4">
               {/* Modelos & IA */}
-              <CaptionEditor platform={platform}>
+              <SectionCard className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">Modelos & IA</div>
+                  <div className="text-[11px] text-[#6B7280]">Plataforma: <b>{platform === 'x' ? 'X' : platform}</b></div>
+                </div>
+
                 {platform === 'instagram' ? (
                   <div className="grid gap-3">
                     <div>
@@ -469,57 +478,46 @@ export default function ComposerDrawer({
                     </div>
                   </div>
                 )}
-              </CaptionEditor>
-
-              {/* Editor de legenda */}
-              <SectionCard className="space-y-1">
-                <div className="text-sm font-medium text-[#374151]">
-                  Legenda {busyCaption && <span className="ml-2 text-[11px] text-[#EE4D2D]">gerando…</span>}
-                </div>
-                <textarea
-                  className="w-full border border-[#FFD9CF] rounded-lg p-2 text-sm"
-                  rows={10}
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  placeholder={
-                    platform === 'instagram'
-                      ? 'Use um modelo pronto ou clique em “Gerar com IA”.'
-                      : 'Use um modelo pronto ou escreva aqui sua legenda.'
-                  }
-                />
               </SectionCard>
+
+              {/* Legenda */}
+              <CaptionEditor
+                caption={caption}
+                setCaption={setCaption}
+                placeholder={
+                  platform === 'instagram'
+                    ? 'Use um modelo pronto ou clique em “Gerar com IA”.'
+                    : 'Use um modelo pronto ou escreva aqui sua legenda.'
+                }
+              />
+
+              {/* Erro */}
+              {errMsg && (
+                <SectionCard>
+                  <div className="p-2 text-xs rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
+                    {errMsg}
+                  </div>
+                </SectionCard>
+              )}
             </div>
           </div>
-
-          {/* Erro */}
-          {errMsg && (
-            <div className="mt-4 p-2 text-xs rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
-              {errMsg}
-            </div>
-          )}
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t flex justify-end gap-2">
+        <div className="sticky bottom-0 z-10 px-4 md:px-6 py-3 border-t bg-white/90 backdrop-blur flex justify-end gap-2">
           <button className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]" onClick={onClose}>
             Cancelar
           </button>
           <button
-            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
-            disabled={publishDisabled || mode === 'schedule'}
-            onClick={() => handleSubmit()}
-            title={mode === 'schedule' ? 'Troque para “Publicar agora”' : 'Publicar agora'}
+            className={cx(
+              'px-4 py-2 rounded-lg text-white flex items-center gap-2 disabled:opacity-60',
+              mode === 'schedule' ? 'bg-[#111827] hover:bg-[#1f2937]' : 'bg-[#EE4D2D] hover:bg-[#D8431F]'
+            )}
+            disabled={publishDisabled}
+            onClick={handleSubmit}
           >
             {busyLink || busyCaption ? <Loader2 className="animate-spin w-4 h-4" /> : null}
-            Publicar
-          </button>
-          <button
-            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
-            disabled={publishDisabled || mode !== 'schedule'}
-            onClick={() => handleSubmit()}
-            title={mode !== 'schedule' ? 'Ative “Agendar” para habilitar' : 'Agendar'}
-          >
-            Agendar
+            {mode === 'schedule' ? 'Agendar' : 'Publicar'}
           </button>
         </div>
       </aside>
