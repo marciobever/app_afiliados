@@ -7,10 +7,6 @@ import {
   Loader2,
   Globe2,
   Wand2,
-  TimerReset,
-  Clock4,
-  CalendarClock,
-  AlarmClockOff,
 } from 'lucide-react';
 
 import {
@@ -32,11 +28,12 @@ import {
   LinkBox,
   ScheduleBox,
   CaptionEditor,
+  QuickPick,
 } from './ui';
 
-/* ---- chamadas backend ---- */
-
-/** Link com SubIDs (n8n /webhook/shopee_subids via nosso proxy) */
+/* =======================================================
+ *  Chamada: n8n /webhook/shopee_subids (via proxy Next)
+ * ======================================================= */
 async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: Product) {
   const safeProduct = ensureSafeProduct(baseUrl, product);
   const r = await fetch('/api/integrations/shopee/track', {
@@ -45,17 +42,24 @@ async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: P
     body: JSON.stringify({ base_url: baseUrl, platform, product: safeProduct }),
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || (j as any).error) throw new Error((j as any).message || (j as any).error || 'Falha ao montar SubIDs');
+  if (!r.ok || (j as any).error)
+    throw new Error((j as any).message || (j as any).error || 'Falha ao montar SubIDs');
   return { url: ((j as any).url as string) || '' };
 }
 
-/** Gera legenda via IA (n8n /webhook/caption via /api/caption) */
+/* =======================================================
+ *  Chamada: n8n /webhook/caption (via /api/caption)
+ * ======================================================= */
 async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payload: any) {
   const r = await fetch('/api/caption', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/plain;q=0.9,*/*;q=0.8' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/plain;q=0.9,*/*;q=0.8',
+    },
     body: JSON.stringify({ kind, ...payload }),
   });
+
   let text = await r.text();
   let data: any;
   try {
@@ -67,14 +71,21 @@ async function fetchCaption(kind: 'instagram_caption' | 'facebook_caption', payl
       data = { raw: text };
     }
   }
-  if (!r.ok || data?.error) throw new Error(data?.message || data?.error || `Falha ao gerar legenda`);
+
+  if (!r.ok || data?.error) {
+    throw new Error(data?.message || data?.error || `Falha ao gerar legenda`);
+  }
+
   const root = Array.isArray(data) ? data[0] : data;
   const variants = root?.variants ?? data?.variants ?? [];
   const keyword = root?.keyword ?? payload?.keyword ?? 'oferta';
   return { variants, keyword };
 }
 
-/** Publica/agenda via nossa API Next (proxy para n8n). Enviamos `link` e `trackedUrl`. */
+/* =======================================================
+ *  Chamada: publicar/agendar (via /api/integrations/n8n/publish)
+ *  Compat: envia `link` e `trackedUrl`
+ * ======================================================= */
 async function publishToSocial({
   platform,
   product,
@@ -93,8 +104,8 @@ async function publishToSocial({
   const payload = {
     platform,
     product: safeProduct,
-    link: trackedUrl,         // compat com workflow antigo
-    trackedUrl,               // compat com mapeamento novo
+    link: trackedUrl,                // compat workflow antigo
+    trackedUrl,                      // mapeamento novo
     caption,
     scheduleTime: scheduleTime || null, // ISO UTC se agendado
   };
@@ -119,8 +130,9 @@ async function publishToSocial({
   return data || { ok: true, raw };
 }
 
-/* -------------------- componente -------------------- */
-
+/* =======================================================
+ *  Componente principal
+ * ======================================================= */
 export default function ComposerDrawer({
   open,
   onClose,
@@ -130,7 +142,7 @@ export default function ComposerDrawer({
   onClose: () => void;
   product: Product | null;
 }) {
-  // Bloqueia scroll do body ao abrir
+  // Bloqueia o scroll do body ao abrir o drawer
   React.useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -138,31 +150,31 @@ export default function ComposerDrawer({
     return () => { document.body.style.overflow = prev; };
   }, [open]);
 
-  // SubIDs (só mostramos qual está ativo; fetch simples)
+  // SubIDs salvos
   const [subids, setSubids] = React.useState<{ by_platform: Record<string, string>; default: string }>({
     by_platform: {},
     default: '',
   });
 
-  // plataforma + keyword (IG)
+  // Plataforma + keyword (IG)
   const [platform, setPlatform] = React.useState<PlatformKey>('facebook');
   const [igKeyword, setIgKeyword] = React.useState<string>('oferta');
 
-  // caption & link
+  // Caption & link
   const [trackedUrl, setTrackedUrl] = React.useState('');
   const [caption, setCaption] = React.useState('');
   const [busyLink, setBusyLink] = React.useState(false);
   const [busyCaption, setBusyCaption] = React.useState(false);
   const [errMsg, setErrMsg] = React.useState<string | null>(null);
 
-  // templates
+  // Templates
   const [igTemplateKey, setIgTemplateKey] = React.useState<string>(IG_TEMPLATES[0].key);
   const [fbTemplateKey, setFbTemplateKey] = React.useState<string>(FB_TEMPLATES[0].key);
 
-  // agendamento
+  // Agendamento
   const [mode, setMode] = React.useState<'now' | 'schedule'>('now');
   const [dtLocal, setDtLocal] = React.useState<string>(dtLocalPlus(15)); // default +15m
-  const minDt = dtLocalPlus(1); // pelo menos +1m
+  const minDt = dtLocalPlus(1); // pelo menos +1min
 
   // Carrega SubIDs quando abrir
   React.useEffect(() => {
@@ -183,7 +195,7 @@ export default function ComposerDrawer({
     return () => { alive = false; };
   }, [open]);
 
-  // Gera shortlink sempre que abrir/mudar plataforma
+  // Gera shortlink sempre que abrir/mudar plataforma/produto
   React.useEffect(() => {
     if (!open || !product) return;
     let alive = true;
@@ -218,6 +230,7 @@ export default function ComposerDrawer({
     }
   }
 
+  // Gerar legenda com IA
   async function handleGenerateCaption() {
     if (!product) return;
     setBusyCaption(true);
@@ -243,7 +256,7 @@ export default function ComposerDrawer({
         setCaption(parts.join('\n\n').replace(/\{keyword\}/gi, keyword));
       } else {
         const { variants } = await fetchCaption('facebook_caption', {
-          products: [ensureSafeProduct(product.url, product)],
+          products: [safeProduct],
           style: 'Minimal',
         });
         const v = Array.isArray(variants) && variants.length ? variants[0] : null;
@@ -254,7 +267,7 @@ export default function ComposerDrawer({
         const parts = v
           ? [(v.title || '').trim(), (v.intro || '').trim(), bullets, (v.cta || '').trim(), (v.hashtags || []).join(' ')]
               .filter(Boolean)
-          : [`${product.title}`, `Confira aqui 👉 ${trackedUrl || product.url}`];
+          : [`${safeProduct.title}`, `Confira aqui 👉 ${trackedUrl || safeProduct.url}`];
         setCaption(parts.join('\n\n'));
       }
     } catch (e: any) {
@@ -266,6 +279,7 @@ export default function ComposerDrawer({
     }
   }
 
+  // Submit (publicar/agendar)
   async function handleSubmit() {
     if (!product) return;
     if (!trackedUrl) {
@@ -315,10 +329,10 @@ export default function ComposerDrawer({
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-stretch justify-end" aria-modal="true" role="dialog">
-      {/* backdrop */}
+      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/45" onClick={onClose} />
 
-      {/* drawer */}
+      {/* Drawer */}
       <aside className="relative h-full w-full md:w-[980px] bg-white border-l shadow-2xl flex flex-col">
         {/* Header */}
         <div className="sticky top-0 z-10 px-4 md:px-6 py-3 border-b bg-white/90 backdrop-blur flex items-center justify-between">
@@ -347,7 +361,7 @@ export default function ComposerDrawer({
         {/* Body */}
         <div className="flex-1 overflow-auto px-4 md:px-6 py-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Esquerda */}
+            {/* Coluna esquerda */}
             <div className="space-y-4">
               <ProductSummary product={product} />
 
@@ -397,13 +411,15 @@ export default function ComposerDrawer({
               )}
             </div>
 
-            {/* Direita */}
+            {/* Coluna direita */}
             <div className="space-y-4">
               {/* Modelos & IA */}
               <SectionCard className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium">Modelos & IA</div>
-                  <div className="text-[11px] text-[#6B7280]">Plataforma: <b>{platform === 'x' ? 'X' : platform}</b></div>
+                  <div className="text-[11px] text-[#6B7280]">
+                    Plataforma: <b>{platform === 'x' ? 'X' : platform}</b>
+                  </div>
                 </div>
 
                 {platform === 'instagram' ? (
@@ -458,4 +474,76 @@ export default function ComposerDrawer({
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-sm font-medium text-[#374151]">Modelo pronto</div>
                       <select
-                        className="border border-[#
+                        className="border border-[#FFD9CF] rounded-lg px-2 py-1 text-xs"
+                        value={fbTemplateKey}
+                        onChange={(e) => setFbTemplateKey(e.target.value)}
+                      >
+                        {FB_TEMPLATES.map(t => (
+                          <option key={t.key} value={t.key}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <button
+                        onClick={applyTemplate}
+                        className="inline-flex items-center gap-1.5 rounded-md text-xs px-3 py-1.5 border border-[#FFD9CF] bg-white hover:bg-[#FFF4F0]"
+                      >
+                        Usar modelo
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </SectionCard>
+
+              {/* Editor de legenda */}
+              <CaptionEditor
+                value={caption}
+                onChange={setCaption}
+                busy={busyCaption}
+                platform={platform}
+              />
+
+              {/* Erro geral */}
+              {errMsg && (
+                <div className="p-2 text-xs rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
+                  {errMsg}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer (fixo) */}
+        <div className="sticky bottom-0 z-10 px-4 md:px-6 py-3 border-t bg-white/90 backdrop-blur flex items-center justify-between">
+          <div className="text-[11px] text-[#6B7280]">
+            {mode === 'schedule'
+              ? `Agendado para: ${dtLocal ? new Date(dtLocal).toLocaleString() : '—'}`
+              : 'Publicação imediata'}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]"
+              onClick={onClose}
+            >
+              Cancelar
+            </button>
+            <button
+              className={cx(
+                'px-4 py-2 rounded-lg text-white flex items-center gap-2 disabled:opacity-60',
+                mode === 'schedule'
+                  ? 'bg-[#111827] hover:bg-[#1f2937]'
+                  : 'bg-[#EE4D2D] hover:bg-[#D8431F]'
+              )}
+              disabled={publishDisabled}
+              onClick={handleSubmit}
+            >
+              {busyLink || busyCaption ? <Loader2 className="animate-spin w-4 h-4" /> : null}
+              {mode === 'schedule' ? 'Agendar' : 'Publicar'}
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
