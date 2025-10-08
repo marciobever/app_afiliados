@@ -10,6 +10,7 @@ import {
   CalendarClock,
   Globe2,
   Wand2,
+  AlertCircle,
 } from 'lucide-react';
 
 type PlatformKey = 'facebook' | 'instagram' | 'x';
@@ -23,29 +24,12 @@ type Product = {
   url: string;
 };
 
+/* -----------------------------------------------------------
+ * utils
+ * ---------------------------------------------------------*/
 function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
-
-function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }) {
-  const [ok, setOk] = React.useState(false);
-  return (
-    <button
-      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-[#FFD9CF] hover:bg-[#FFF4F0] text-xs disabled:opacity-50"
-      onClick={async () => {
-        await navigator.clipboard.writeText(text || '');
-        setOk(true);
-        setTimeout(() => setOk(false), 1000);
-      }}
-      disabled={!text}
-    >
-      {ok ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-      {ok ? 'Copiado' : label}
-    </button>
-  );
-}
-
-/* -------------------- helpers -------------------- */
 
 function stripFences(s: string) {
   return String(s)
@@ -97,8 +81,39 @@ function ensureSafeProduct(baseUrl: string, p?: Product | null): Product {
   };
 }
 
-/* -------------------- modelos prontos -------------------- */
+/** Converte um valor de <input type="datetime-local"> (sem TZ) para ISO UTC */
+function toIsoUtc(localValue: string): string {
+  // localValue ex.: "2025-10-08T18:00"
+  // new Date(localValue) interpreta como local-time; toISOString() entrega UTC.
+  const d = new Date(localValue);
+  if (isNaN(d.getTime())) return '';
+  return d.toISOString();
+}
 
+/* -----------------------------------------------------------
+ * UI helpers
+ * ---------------------------------------------------------*/
+function CopyButton({ text, label = 'Copiar' }: { text: string; label?: string }) {
+  const [ok, setOk] = React.useState(false);
+  return (
+    <button
+      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-[#FFD9CF] hover:bg-[#FFF4F0] text-xs disabled:opacity-50"
+      onClick={async () => {
+        await navigator.clipboard.writeText(text || '');
+        setOk(true);
+        setTimeout(() => setOk(false), 1000);
+      }}
+      disabled={!text}
+    >
+      {ok ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      {ok ? 'Copiado' : label}
+    </button>
+  );
+}
+
+/* -----------------------------------------------------------
+ * Modelos prontos
+ * ---------------------------------------------------------*/
 const IG_TEMPLATES: Array<{ key: string; label: string; build: (p: Product, link: string, kw: string) => string }> = [
   {
     key: 'ig_minimal',
@@ -160,7 +175,9 @@ Confira 👉 ${link}`,
   },
 ];
 
-/* ---- chamadas backend ---- */
+/* -----------------------------------------------------------
+ * chamadas backend
+ * ---------------------------------------------------------*/
 
 /** Link com SubIDs (n8n /webhook/shopee_subids via nosso proxy) */
 async function getTrackedUrl(baseUrl: string, platform: PlatformKey, product?: Product) {
@@ -221,7 +238,8 @@ async function publishToSocial({
   const payload = {
     platform,                 // 'facebook' | 'instagram' | 'x'
     product: safeProduct,
-    trackedUrl,               // backend espera "trackedUrl"
+    trackedUrl,               // nosso site usa; no n8n mapeamos para "link"
+    link: trackedUrl,         // redundante p/ compatibilidade
     caption,
     scheduleTime: scheduleTime || null,
   };
@@ -236,8 +254,6 @@ async function publishToSocial({
   let data: any = null;
   try { data = raw ? JSON.parse(raw) : null; } catch {}
 
-  console.debug('[publishToSocial] status:', res.status, 'raw:', raw);
-
   if (!res.ok || (data && data.error)) {
     const msg =
       (data && (data.message || data.error)) ||
@@ -248,7 +264,9 @@ async function publishToSocial({
   return data || { ok: true, raw };
 }
 
-/* -------------------- componente -------------------- */
+/* -----------------------------------------------------------
+ * Componente
+ * ---------------------------------------------------------*/
 
 export default function ComposerDrawer({
   open,
@@ -279,6 +297,10 @@ export default function ComposerDrawer({
   // modelos escolhidos
   const [igTemplateKey, setIgTemplateKey] = React.useState<string>(IG_TEMPLATES[0].key);
   const [fbTemplateKey, setFbTemplateKey] = React.useState<string>(FB_TEMPLATES[0].key);
+
+  // agendamento
+  const [scheduleEnabled, setScheduleEnabled] = React.useState(false);
+  const [scheduleLocal, setScheduleLocal] = React.useState(''); // valor do input datetime-local
 
   // Carrega SubIDs salvos quando abrir
   React.useEffect(() => {
@@ -390,6 +412,7 @@ export default function ComposerDrawer({
     }
     const safeProduct = ensureSafeProduct(product.url, product);
     const finalCaption = (caption || `${safeProduct.title}\n\nConfira aqui 👉 ${trackedUrl}`).trim();
+
     try {
       const resp = await publishToSocial({
         platform,
@@ -407,12 +430,28 @@ export default function ComposerDrawer({
     }
   }
 
+  function handleClickSchedule() {
+    // validação simples
+    if (!scheduleLocal) {
+      setErrMsg('Informe data e horário para agendar.');
+      return;
+    }
+    const iso = toIsoUtc(scheduleLocal);
+    const t = new Date(iso).getTime();
+    const now = Date.now();
+    if (isNaN(t) || t < now + 60_000) {
+      setErrMsg('Escolha um horário futuro (≥ 1 minuto a partir de agora).');
+      return;
+    }
+    publishNow(iso);
+  }
+
   if (!open || !product) return null;
 
   const publishDisabled = !trackedUrl || busyLink || busyCaption;
 
   const availablePlatforms: PlatformKey[] = (['facebook','instagram','x'] as PlatformKey[])
-    .filter(p => p in subids.by_platform || true); // mantemos todas visíveis, mas você pode filtrar só as com subid
+    .filter(p => p in subids.by_platform || true); // mantém todas; ajuste se quiser mostrar só as com subid
 
   const activeSubId = subids.by_platform[platform] || subids.default || '';
 
@@ -449,8 +488,9 @@ export default function ComposerDrawer({
 
           {/* Erro */}
           {errMsg && (
-            <div className="p-2 text-xs rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
-              {errMsg}
+            <div className="flex items-start gap-2 p-2 text-xs rounded-md border border-[#FFD9CF] bg-[#FFF4F0] text-[#B42318]">
+              <AlertCircle className="w-4 h-4 mt-0.5" />
+              <span>{errMsg}</span>
             </div>
           )}
 
@@ -575,31 +615,70 @@ export default function ComposerDrawer({
             <span>{busyLink ? 'Gerando link rastreável…' : trackedUrl ? 'Link rastreável pronto.' : 'Sem link ainda.'}</span>
             {trackedUrl ? <CopyButton text={trackedUrl} label="Copiar link" /> : null}
           </div>
+
+          {/* Agendamento */}
+          <div className="mt-4 rounded-lg border border-[#FFD9CF] p-3 bg-[#FFF9F7]">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm font-medium text-[#374151]">
+                <CalendarClock className="w-4 h-4 text-[#EE4D2D]" />
+                Agendar publicação
+              </label>
+              <button
+                onClick={() => setScheduleEnabled(v => !v)}
+                className={cx(
+                  'px-2 py-1 rounded-md text-xs border',
+                  scheduleEnabled ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]' : 'bg-white border-[#FFD9CF]'
+                )}
+              >
+                {scheduleEnabled ? 'Ativado' : 'Desativado'}
+              </button>
+            </div>
+
+            {scheduleEnabled && (
+              <div className="mt-3 grid gap-2">
+                <div className="text-xs text-[#6B7280]">
+                  Selecione a data e o horário (do seu fuso). Converteremos para UTC automaticamente.
+                </div>
+                <input
+                  type="datetime-local"
+                  className="w-full border border-[#FFD9CF] rounded-lg px-3 py-2 text-sm"
+                  value={scheduleLocal}
+                  onChange={(e) => setScheduleLocal(e.target.value)}
+                  min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)} // +1 min
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t flex justify-end gap-2">
+        <div className="p-4 border-t flex flex-col sm:flex-row sm:justify-end gap-2">
           <button className="px-4 py-2 rounded-lg border border-[#FFD9CF] hover:bg-[#FFF4F0]" onClick={onClose}>
             Cancelar
           </button>
-          <button
-            className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
-            disabled={publishDisabled}
-            onClick={() => publishNow()}
-          >
-            {busyLink || busyCaption ? <Loader2 className="animate-spin w-4 h-4" /> : null}
-            Publicar
-          </button>
-          <button
-            className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
-            disabled={publishDisabled}
-            onClick={() => {
-              const when = prompt('Agendar para (ex: 2025-10-05T18:00:00Z):');
-              if (when) publishNow(when);
-            }}
-          >
-            <CalendarClock className="w-4 h-4" /> Agendar
-          </button>
+
+          {!scheduleEnabled && (
+            <button
+              className="px-4 py-2 rounded-lg bg-[#EE4D2D] hover:bg-[#D8431F] text-white flex items-center gap-2 disabled:opacity-60"
+              disabled={publishDisabled}
+              onClick={() => publishNow()}
+            >
+              {busyLink || busyCaption ? <Loader2 className="animate-spin w-4 h-4" /> : null}
+              Publicar agora
+            </button>
+          )}
+
+          {scheduleEnabled && (
+            <button
+              className="px-4 py-2 rounded-lg bg-[#111827] hover:bg-[#1f2937] text-white flex items-center gap-2 disabled:opacity-60"
+              disabled={publishDisabled || !scheduleLocal}
+              onClick={handleClickSchedule}
+              title="Enviar para a fila de agendamentos"
+            >
+              <CalendarClock className="w-4 h-4" />
+              Agendar
+            </button>
+          )}
         </div>
       </aside>
     </div>
