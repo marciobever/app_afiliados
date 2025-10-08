@@ -1,6 +1,6 @@
 // app/dashboard/shopee/ComposerDrawer/utils.ts
-'use client';
 
+// Tipos
 export type PlatformKey = 'facebook' | 'instagram' | 'x';
 
 export type Product = {
@@ -12,11 +12,12 @@ export type Product = {
   url: string;
 };
 
-/* ----------------- helpers base ----------------- */
+// Helpers visuais
 export function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
 
+// Limpa fences de resposta em texto (quando vem ```json ... ```)
 export function stripFences(s: string) {
   return String(s)
     .trim()
@@ -26,6 +27,7 @@ export function stripFences(s: string) {
     .trim();
 }
 
+/** Deriva ID Shopee a partir da URL (shopId_itemId) */
 export function deriveShopeeIdFromUrl(url?: string): string {
   if (!url) return '';
   try {
@@ -39,6 +41,7 @@ export function deriveShopeeIdFromUrl(url?: string): string {
   return '';
 }
 
+/** Garante um Product completo/seguro antes de enviar pro backend */
 export function ensureSafeProduct(baseUrl: string, p?: Product | null): Product {
   const id =
     (p?.id && String(p.id)) ||
@@ -65,35 +68,45 @@ export function ensureSafeProduct(baseUrl: string, p?: Product | null): Product 
   };
 }
 
-/* ----------------- tempo / datas ----------------- */
-function pad(n: number) { return String(n).padStart(2, '0'); }
-
-export function todayLocalDate(): string {
+/** Retorna 'YYYY-MM-DDTHH:mm' no fuso LOCAL somando X minutos a partir de agora */
+export function dtLocalPlus(minutes: number): string {
   const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-export function roundToNextMinutes(step: number): string {
-  const d = new Date();
-  const minutes = d.getMinutes();
-  const rounded = Math.ceil((minutes + 1) / step) * step; // +1 p/ evitar "agora"
-  d.setMinutes(rounded, 0, 0);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  d.setMinutes(d.getMinutes() + minutes);
+  const p = (n: number) => String(n).padStart(2, '0');
+  const y = d.getFullYear();
+  const m = p(d.getMonth() + 1);
+  const day = p(d.getDate());
+  const hh = p(d.getHours());
+  const mm = p(d.getMinutes());
+  return `${y}-${m}-${day}T${hh}:${mm}`;
 }
 
 /**
- * Junta date (YYYY-MM-DD) e time (HH:mm) como horário local
- * e retorna ISO UTC (ex.: 2025-10-09T12:30:00Z).
+ * Converte 'YYYY-MM-DDTHH:mm' (interpreta como horário LOCAL do usuário)
+ * para ISO UTC (terminando com 'Z'), ex.: '2025-10-09T12:30:00.000Z'
  */
-export function combineDateTimeToIsoUtc(dateStr: string, timeStr: string): string {
-  const [y, m, d] = (dateStr || todayLocalDate()).split('-').map(n => parseInt(n, 10));
-  const [hh, mm] = (timeStr || roundToNextMinutes(15)).split(':').map(n => parseInt(n, 10));
-  const dt = new Date(y, (m - 1), d, hh, mm, 0, 0); // <- LOCAL time
-  return dt.toISOString(); // ISO UTC
+export function localToIsoUtc(local: string): string {
+  // Parse manual para garantir que seja tratado como horário LOCAL
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local);
+  if (!m) throw new Error('Formato inválido de datetime-local');
+  const [, y, mo, d, h, mi] = m.map(Number) as unknown as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number
+  ];
+  const dt = new Date(y, mo - 1, d, h, mi, 0, 0); // local time
+  return dt.toISOString(); // to UTC ISO
 }
 
-/* ----------------- modelos prontos ----------------- */
-export const IG_TEMPLATES: Array<{ key: string; label: string; build: (p: Product, link: string, kw: string) => string }> = [
+/* -------------------- Modelos prontos -------------------- */
+export const IG_TEMPLATES: Array<{
+  key: string;
+  label: string;
+  build: (p: Product, link: string, kw: string) => string;
+}> = [
   {
     key: 'ig_minimal',
     label: 'IG — Minimal',
@@ -131,7 +144,11 @@ ${kw ? `Palavra-chave: ${kw}\n` : ''}Veja mais 👉 ${link}
   },
 ];
 
-export const FB_TEMPLATES: Array<{ key: string; label: string; build: (p: Product, link: string) => string }> = [
+export const FB_TEMPLATES: Array<{
+  key: string;
+  label: string;
+  build: (p: Product, link: string) => string;
+}> = [
   {
     key: 'fb_curto',
     label: 'FB — Direto e curto',
