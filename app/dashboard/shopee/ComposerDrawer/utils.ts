@@ -1,4 +1,5 @@
 // app/dashboard/shopee/ComposerDrawer/utils.ts
+'use client';
 
 export type PlatformKey = 'facebook' | 'instagram' | 'x';
 
@@ -11,12 +12,11 @@ export type Product = {
   url: string;
 };
 
-// classes util
+/* ----------------- helpers base ----------------- */
 export function cx(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ');
 }
 
-// remove cercas de ```json
 export function stripFences(s: string) {
   return String(s)
     .trim()
@@ -65,22 +65,34 @@ export function ensureSafeProduct(baseUrl: string, p?: Product | null): Product 
   };
 }
 
-// converte 'YYYY-MM-DDTHH:mm' local -> ISO UTC
-export function localToIsoUtc(local: string): string {
-  const d = new Date(local);
-  return d.toISOString();
-}
+/* ----------------- tempo / datas ----------------- */
+function pad(n: number) { return String(n).padStart(2, '0'); }
 
-// gera 'YYYY-MM-DDTHH:mm' local com +N minutos
-export function dtLocalPlus(minutes: number): string {
+export function todayLocalDate(): string {
   const d = new Date();
-  d.setMinutes(d.getMinutes() + minutes);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/* -------------------- modelos prontos -------------------- */
+export function roundToNextMinutes(step: number): string {
+  const d = new Date();
+  const minutes = d.getMinutes();
+  const rounded = Math.ceil((minutes + 1) / step) * step; // +1 p/ evitar "agora"
+  d.setMinutes(rounded, 0, 0);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
+/**
+ * Junta date (YYYY-MM-DD) e time (HH:mm) como horário local
+ * e retorna ISO UTC (ex.: 2025-10-09T12:30:00Z).
+ */
+export function combineDateTimeToIsoUtc(dateStr: string, timeStr: string): string {
+  const [y, m, d] = (dateStr || todayLocalDate()).split('-').map(n => parseInt(n, 10));
+  const [hh, mm] = (timeStr || roundToNextMinutes(15)).split(':').map(n => parseInt(n, 10));
+  const dt = new Date(y, (m - 1), d, hh, mm, 0, 0); // <- LOCAL time
+  return dt.toISOString(); // ISO UTC
+}
+
+/* ----------------- modelos prontos ----------------- */
 export const IG_TEMPLATES: Array<{ key: string; label: string; build: (p: Product, link: string, kw: string) => string }> = [
   {
     key: 'ig_minimal',
@@ -90,7 +102,7 @@ export const IG_TEMPLATES: Array<{ key: string; label: string; build: (p: Produc
 
 ${kw ? `✨ ${kw}\n\n` : ''}Confira aqui 👉 ${link}
 
-#oferta #promo #achadinhos`
+#oferta #promo #achadinhos`,
   },
   {
     key: 'ig_hook_body_hashtags',
@@ -101,7 +113,7 @@ ${p.title}
 
 👉 Link: ${link}
 
-#desconto #oportunidade #compras`
+#desconto #oportunidade #compras`,
   },
   {
     key: 'ig_benefits',
@@ -115,7 +127,7 @@ ${p.title}
 
 ${kw ? `Palavra-chave: ${kw}\n` : ''}Veja mais 👉 ${link}
 
-#boanoite #achados #viralizou`
+#boanoite #achados #viralizou`,
   },
 ];
 
