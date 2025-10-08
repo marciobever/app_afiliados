@@ -12,10 +12,12 @@ export function SectionCard({
   children,
 }: React.PropsWithChildren<{ className?: string }>) {
   return (
-    <div className={cx(
-      'rounded-2xl border border-[#FFD9CF] bg-white/80 backdrop-blur p-3 md:p-4',
-      className
-    )}>
+    <div
+      className={cx(
+        'rounded-2xl border border-[#FFD9CF] bg-white/80 backdrop-blur p-3 md:p-4',
+        className
+      )}
+    >
       {children}
     </div>
   );
@@ -61,7 +63,9 @@ export function PlatformSelector({
           onClick={() => onChange(p)}
           className={cx(
             'px-3 py-1.5 rounded-lg border text-sm',
-            value === p ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]' : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
+            value === p
+              ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]'
+              : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
           )}
           disabled={!!disabled}
         >
@@ -122,25 +126,36 @@ export function LinkBox({ trackedUrl, busy }: { trackedUrl: string; busy: boolea
 export function ScheduleBox({
   mode,
   setMode,
-  dtLocal,
-  setDtLocal,
-  minDt,
+  date,
+  time,
+  setDate,
+  setTime,
+  minDate,
+  minTimeHint,
+  tzLabel,
 }: {
   mode: 'now' | 'schedule';
   setMode: (m: 'now' | 'schedule') => void;
-  dtLocal: string;
-  setDtLocal: (v: string) => void;
-  minDt: string;
+  date: string;
+  time: string;
+  setDate: (v: string) => void;
+  setTime: (v: string) => void;
+  minDate: string;
+  minTimeHint: string;
+  tzLabel: string;
 }) {
   return (
-    <SectionCard className="space-y-2">
+    <SectionCard className="space-y-3">
       <div className="text-sm font-medium">Publicação</div>
+
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => setMode('now')}
           className={cx(
             'px-3 py-1.5 rounded-lg border text-sm',
-            mode === 'now' ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]' : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
+            mode === 'now'
+              ? 'bg-[#EE4D2D] text-white border-[#EE4D2D]'
+              : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
           )}
         >
           Publicar agora
@@ -149,7 +164,9 @@ export function ScheduleBox({
           onClick={() => setMode('schedule')}
           className={cx(
             'px-3 py-1.5 rounded-lg border text-sm',
-            mode === 'schedule' ? 'bg-[#111827] text-white border-[#111827]' : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
+            mode === 'schedule'
+              ? 'bg-[#111827] text-white border-[#111827]'
+              : 'bg-white border-[#FFD9CF] hover:bg-[#FFF4F0]'
           )}
         >
           Agendar
@@ -157,17 +174,32 @@ export function ScheduleBox({
       </div>
 
       {mode === 'schedule' && (
-        <div className="mt-2 grid gap-2">
-          <label className="text-xs text-gray-600">Data e hora (seu fuso)</label>
-          <input
-            type="datetime-local"
-            className="w-full border border-[#FFD9CF] rounded-lg px-3 py-2 text-sm"
-            min={minDt}
-            value={dtLocal}
-            onChange={(e) => setDtLocal(e.target.value)}
-          />
+        <div className="grid gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-gray-600">Dia</label>
+              <input
+                type="date"
+                className="mt-1 w-full border border-[#FFD9CF] rounded-lg px-3 py-2 text-sm"
+                min={minDate}
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-gray-600">Horário</label>
+              <input
+                type="time"
+                className="mt-1 w-full border border-[#FFD9CF] rounded-lg px-3 py-2 text-sm"
+                step={300} // 5 min
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+              />
+            </div>
+          </div>
+
           <p className="text-[11px] text-[#6B7280]">
-            Será convertido para UTC ao enviar para o workflow.
+            Será convertido para UTC ao enviar. Seu fuso: <b>{tzLabel}</b>. Sugestão mínima de horário hoje: <b>{minTimeHint}</b>.
           </p>
         </div>
       )}
@@ -175,7 +207,7 @@ export function ScheduleBox({
   );
 }
 
-/* ========================= caption editor (opcional) ========================= */
+/* ========================= caption editor ========================= */
 export function CaptionEditor({
   caption,
   setCaption,
@@ -196,18 +228,5 @@ export function CaptionEditor({
         placeholder={placeholder || 'Escreva ou cole sua legenda…'}
       />
     </SectionCard>
-  );
-}
-
-/* ========================= quick pick ========================= */
-export function QuickPick({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="px-2.5 py-1.5 rounded-md border border-[#FFD9CF] bg-white hover:bg-[#FFF4F0] text-xs"
-    >
-      {label}
-    </button>
   );
 }
