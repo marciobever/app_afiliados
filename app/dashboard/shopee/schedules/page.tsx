@@ -1,100 +1,155 @@
 // app/dashboard/shopee/schedules/page.tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import Link from 'next/link';
-import { ArrowLeft, CalendarClock, Loader2, RefreshCw, XCircle } from 'lucide-react';
-import { SectionHeader } from '@/components/ui';
+import * as React from "react";
+import Link from "next/link";
+import { SectionHeader } from "@/components/ui";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  CalendarClock,
+  RefreshCw,
+  Loader2,
+  AlertCircle,
+} from "lucide-react";
 
-type ScheduleItem = {
+type Row = {
   id: string;
-  provider: 'meta' | 'instagram';
-  platform: 'facebook' | 'instagram' | 'x';
-  caption: string;
+  provider: string;
+  platform: string;
+  caption?: string | null;
   image_url?: string | null;
   shortlink?: string | null;
-  scheduled_at: string | null; // ISO
-  status: 'queued' | 'claimed' | 'error' | 'done' | 'canceled';
+  scheduled_at: string | null;
+  status: "queued" | "claimed" | "error" | "done" | "canceled" | string;
 };
 
-type StatusFilter = 'all' | ScheduleItem['status'];
+type StatusFilter = "all" | "queued" | "claimed" | "error" | "done" | "canceled";
 
 function fmtWhen(iso: string | null) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '—';
-  const dd = d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const hh = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-  return `${dd}, ${hh}`;
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    const date = d.toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const time = d.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    return `${date}, ${time}`;
+  } catch {
+    return iso;
+  }
+}
+
+function StatusPill({ s }: { s: Row["status"] }) {
+  const map: Record<string, string> = {
+    queued: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+    claimed: "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
+    done: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+    canceled: "bg-zinc-50 text-zinc-600 ring-1 ring-zinc-200",
+    error: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
+  };
+  const cls = map[s] ?? "bg-zinc-50 text-zinc-700 ring-1 ring-zinc-200";
+  return (
+    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${cls}`}>
+      {s}
+    </span>
+  );
 }
 
 export default function ShopeeSchedulesPage() {
-  const [items, setItems] = React.useState<ScheduleItem[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [status, setStatus] = React.useState<StatusFilter>('all');
+  const router = useRouter();
+  const [status, setStatus] = React.useState<StatusFilter>("all");
+  const [loading, setLoading] = React.useState(true);
+  const [rows, setRows] = React.useState<Row[]>([]);
+  const [rowBusy, setRowBusy] = React.useState<Record<string, boolean>>({});
+  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
-  async function load() {
+  async function fetchData(s: StatusFilter) {
     setLoading(true);
+    setErrorMsg(null);
     try {
-      const q = status === 'all' ? '' : `?status=${encodeURIComponent(status)}`;
-      const res = await fetch(`/api/schedules${q}`, { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Falha ao carregar');
-      setItems(data.items ?? []);
-    } catch (e) {
-      console.error(e);
-      alert('Não foi possível carregar os agendamentos.');
+      const qs = s === "all" ? "" : `?status=${encodeURIComponent(s)}`;
+      const res = await fetch(`/api/schedules${qs}`, { cache: "no-store" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || `HTTP ${res.status}`);
+      }
+      const j = (await res.json()) as { items: Row[] };
+      setRows(j.items || []);
+    } catch (e: any) {
+      setErrorMsg(e?.message || "Falha ao carregar agendamentos.");
     } finally {
       setLoading(false);
     }
   }
 
   React.useEffect(() => {
-    load();
+    fetchData(status);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
-  async function cancel(id: string) {
-    const ok = confirm('Cancelar este agendamento?');
-    if (!ok) return;
+  async function cancelOne(id: string) {
+    setRowBusy((m) => ({ ...m, [id]: true }));
+    setErrorMsg(null);
     try {
-      const res = await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Falha ao cancelar');
-      setItems((old) => old.map((it) => (it.id === id ? { ...it, status: 'canceled' } : it)));
-    } catch (e) {
-      console.error(e);
-      alert('Não foi possível cancelar. Tente novamente.');
+      const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || `HTTP ${res.status}`);
+      }
+      // tira do array sem precisar recarregar tudo
+      setRows((arr) => arr.filter((r) => r.id !== id));
+    } catch (e: any) {
+      setErrorMsg(e?.message || "Não foi possível cancelar.");
+    } finally {
+      setRowBusy((m) => ({ ...m, [id]: false }));
     }
   }
 
-  const canCancel = (s: ScheduleItem['status']) => s === 'queued' || s === 'claimed';
-
   return (
-    <main className="relative max-w-6xl mx-auto px-4 pb-16">
+    <div className="relative max-w-6xl mx-auto px-4 pb-16">
+      {/* luz suave topo */}
       <div
         aria-hidden
         className="pointer-events-none select-none absolute inset-x-0 -top-8 h-28 -z-10"
-        style={{ background: 'radial-gradient(80% 120% at 0% 0%, #FFF4F0 0%, transparent 70%)' }}
+        style={{
+          background:
+            "radial-gradient(80% 120% at 0% 0%, #FFF4F0 0%, transparent 70%)",
+        }}
       />
 
-      <SectionHeader emoji="🗓️" title="Agendamentos" subtitle="Gerencie as publicações programadas desta conta." />
+      <SectionHeader
+        emoji="🗓️"
+        title="Agendamentos"
+        subtitle="Gerencie as publicações programadas desta conta."
+      />
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      {/* voltar */}
+      <div className="mt-4">
         <Link
           href="/app/dashboard/shopee"
-          className="inline-flex items-center gap-2 rounded-xl border border-[#FFD9CF] bg-white px-3 py-2 text-sm hover:bg-[#FFF4F0]"
+          className="inline-flex items-center gap-2 rounded-lg border border-zinc-300/60 px-3 py-1.5 text-sm hover:bg-zinc-50"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="w-4 h-4" />
           Voltar ao painel
         </Link>
+      </div>
 
+      {/* filtros / refresh */}
+      <div className="mt-4 flex items-center gap-3">
         <div className="ml-auto flex items-center gap-2">
-          <label className="text-sm text-gray-600">Status:</label>
+          <label className="text-sm text-zinc-600">Status:</label>
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as StatusFilter)}
-            className="rounded-lg border border-[#FFD9CF] bg-white px-2.5 py-1.5 text-sm"
+            className="rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm"
           >
             <option value="all">Todos</option>
             <option value="queued">queued</option>
@@ -105,135 +160,116 @@ export default function ShopeeSchedulesPage() {
           </select>
 
           <button
-            onClick={load}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl border border-[#FFD9CF] bg-white px-3 py-2 text-sm hover:bg-[#FFF4F0] disabled:opacity-60"
+            onClick={() => fetchData(status)}
+            className="inline-flex items-center gap-2 rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            <RefreshCw className="w-4 h-4" />
             Atualizar
           </button>
         </div>
       </div>
 
-      <div className="mt-6 rounded-3xl border border-[#FFD9CF] bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="min-w-[900px] w-full table-fixed">
-            <colgroup>
-              <col className="w-56" />      {/* Quando */}
-              <col className="w-40" />      {/* Plataforma */}
-              <col className="w-[560px]" />  {/* Link (largo) */}
-              <col className="w-32" />      {/* Status */}
-              <col className="w-40" />      {/* Ações */}
-            </colgroup>
+      {/* tabela */}
+      <div className="mt-4 overflow-x-auto">
+        <div className="min-w-[1100px] rounded-2xl border border-zinc-200 overflow-hidden bg-white">
+          {/* cabeçalho */}
+          <div className="grid grid-cols-[220px_160px_1fr_140px_120px] items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
+            <div>Quando</div>
+            <div>Plataforma</div>
+            <div>Link</div>
+            <div>Status</div>
+            <div className="text-right pr-1">Ações</div>
+          </div>
 
-            <thead className="text-left text-sm text-gray-600">
-              <tr className="[&>th]:px-4 [&>th]:py-3 border-b">
-                <th>Quando</th>
-                <th>Plataforma</th>
-                <th>Link</th>
-                <th>Status</th>
-                <th className="text-right">Ações</th>
-              </tr>
-            </thead>
-
-            <tbody className="text-sm">
-              {items.length === 0 && !loading && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
-                    Nenhum agendamento encontrado.
-                  </td>
-                </tr>
-              )}
-
-              {items.map((it, i) => (
-                <tr key={it.id} className={`align-top border-b last:border-none ${i % 2 ? 'bg-[#FFF8F6]' : ''}`}>
-                  {/* Quando */}
-                  <td className="px-4 py-3">
-                    <div className="flex items-start gap-2">
-                      <CalendarClock className="mt-0.5 h-4 w-4 text-gray-500" />
-                      <div className="leading-tight">
-                        <div className="font-medium">{fmtWhen(it.scheduled_at)}</div>
-                        <div className="text-xs text-gray-500">
-                          {it.scheduled_at ? new Date(it.scheduled_at).toLocaleString() : '—'}
-                        </div>
-                      </div>
+          {/* corpo */}
+          {loading ? (
+            <div className="px-6 py-10 flex items-center gap-3 text-zinc-600">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Carregando...
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="px-6 py-10 text-zinc-600">Nenhum agendamento.</div>
+          ) : (
+            rows.map((r) => (
+              <div
+                key={r.id}
+                className="grid grid-cols-[220px_160px_1fr_140px_120px] items-center px-4 py-3 border-t border-zinc-200/70"
+              >
+                {/* quando */}
+                <div className="flex items-start gap-2 text-sm">
+                  <CalendarClock className="mt-0.5 w-4 h-4 text-zinc-500" />
+                  <div className="leading-5">
+                    <div className="font-medium text-zinc-800">
+                      {fmtWhen(r.scheduled_at)}
                     </div>
-                  </td>
+                    <div className="text-[11px] text-zinc-500">
+                      {r.scheduled_at || "—"}
+                    </div>
+                  </div>
+                </div>
 
-                  {/* Plataforma */}
-                  <td className="px-4 py-3">
-                    <div className="text-[11px] tracking-wide text-gray-500 uppercase">{it.provider}</div>
-                    <div className="text-sm">{it.platform}</div>
-                  </td>
+                {/* plataforma */}
+                <div className="text-sm text-zinc-800">
+                  <div className="uppercase text-[10px] tracking-wide text-zinc-500">
+                    {r.provider || "-"}
+                  </div>
+                  <div className="mt-0.5">{r.platform || "-"}</div>
+                </div>
 
-                  {/* Link */}
-                  <td className="px-4 py-3">
-                    {it.shortlink ? (
-                      <a
-                        href={it.shortlink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="break-all text-blue-700 hover:underline"
-                      >
-                        {it.shortlink}
-                      </a>
-                    ) : (
-                      <span className="text-gray-500">—</span>
-                    )}
-                  </td>
-
-                  {/* Status */}
-                  <td className="px-4 py-3">
-                    <span
-                      className={[
-                        'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium',
-                        it.status === 'queued'
-                          ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
-                          : it.status === 'claimed'
-                          ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
-                          : it.status === 'done'
-                          ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-                          : it.status === 'canceled'
-                          ? 'bg-gray-100 text-gray-600 ring-1 ring-gray-200'
-                          : 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
-                      ].join(' ')}
+                {/* link */}
+                <div className="text-sm">
+                  {r.shortlink ? (
+                    <a
+                      href={r.shortlink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-zinc-800 underline underline-offset-2 break-all pr-4"
                     >
-                      {it.status}
-                    </span>
-                  </td>
+                      {r.shortlink}
+                    </a>
+                  ) : (
+                    <span className="text-zinc-500">—</span>
+                  )}
+                </div>
 
-                  {/* Ações */}
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => cancel(it.id)}
-                        disabled={!canCancel(it.status)}
-                        className="inline-flex min-w-[112px] items-center justify-center gap-2 rounded-xl border border-[#FFD9CF] bg-white px-3 py-2 text-sm hover:bg-[#FFF4F0] disabled:opacity-50"
-                        title={canCancel(it.status) ? 'Cancelar agendamento' : 'Não é possível cancelar'}
-                      >
-                        <XCircle className="h-4 w-4" />
-                        Cancelar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                {/* status */}
+                <div className="text-sm">
+                  <StatusPill s={r.status} />
+                </div>
 
-              {loading && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center">
-                    <div className="inline-flex items-center gap-2 text-gray-600">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Carregando…
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                {/* ações */}
+                <div className="flex justify-end pr-1">
+                  <button
+                    onClick={() => cancelOne(r.id)}
+                    disabled={
+                      rowBusy[r.id] ||
+                      r.status === "canceled" ||
+                      r.status === "done"
+                    }
+                    className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-zinc-50"
+                  >
+                    {rowBusy[r.id] ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      // usa mesmo ícone do refresh para ficar leve
+                      <span className="w-4 h-4 inline-block">✕</span>
+                    )}
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
-    </main>
+
+      {/* erro global */}
+      {errorMsg && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <AlertCircle className="w-4 h-4 mt-0.5" />
+          <div>{errorMsg}</div>
+        </div>
+      )}
+    </div>
   );
 }
