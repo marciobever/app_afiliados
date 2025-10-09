@@ -4,7 +4,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { SectionHeader } from "@/components/ui";
-import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   CalendarClock,
@@ -19,7 +18,8 @@ type Row = {
   platform: string;
   caption?: string | null;
   image_url?: string | null;
-  shortlink?: string | null;
+  shortlink?: string | null;       // com UTM (href usa este)
+  url_canonical?: string | null;   // curto sem UTM (quando existir)
   scheduled_at: string | null;
   status: "queued" | "claimed" | "error" | "done" | "canceled" | string;
 };
@@ -45,6 +45,29 @@ function fmtWhen(iso: string | null) {
   }
 }
 
+// Retorna um texto curto e estável para mostrar (sem query/hash)
+function shortenForDisplay(u?: string | null) {
+  if (!u) return "—";
+  try {
+    const url = new URL(u);
+    const host = url.host;
+    const path = url.pathname.replace(/\/+$/, "");
+    const seg = path.split("/").filter(Boolean);
+    const last = seg[seg.length - 1] || "";
+    // Para shortlinks (ex.: s.shopee.com.br/4LAbOlg1kB) mostramos host/slug
+    if (last) return `${host}/${last}`;
+    return host;
+  } catch {
+    // fallback: remove proto + query/hash
+    const noProto = u.replace(/^https?:\/\//, "");
+    const [noHash] = noProto.split("#");
+    const [base] = noHash.split("?");
+    const parts = base.split("/").filter(Boolean);
+    if (parts.length >= 2) return `${parts[0]}/${parts[parts.length - 1]}`;
+    return parts[0] || base;
+  }
+}
+
 function StatusPill({ s }: { s: Row["status"] }) {
   const map: Record<string, string> = {
     queued: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
@@ -62,7 +85,6 @@ function StatusPill({ s }: { s: Row["status"] }) {
 }
 
 export default function ShopeeSchedulesPage() {
-  const router = useRouter();
   const [status, setStatus] = React.useState<StatusFilter>("all");
   const [loading, setLoading] = React.useState(true);
   const [rows, setRows] = React.useState<Row[]>([]);
@@ -104,7 +126,6 @@ export default function ShopeeSchedulesPage() {
         const j = await res.json().catch(() => ({}));
         throw new Error(j?.error || `HTTP ${res.status}`);
       }
-      // tira do array sem precisar recarregar tudo
       setRows((arr) => arr.filter((r) => r.id !== id));
     } catch (e: any) {
       setErrorMsg(e?.message || "Não foi possível cancelar.");
@@ -115,7 +136,7 @@ export default function ShopeeSchedulesPage() {
 
   return (
     <div className="relative max-w-6xl mx-auto px-4 pb-16">
-      {/* luz suave topo */}
+      {/* halo topo */}
       <div
         aria-hidden
         className="pointer-events-none select-none absolute inset-x-0 -top-8 h-28 -z-10"
@@ -134,7 +155,7 @@ export default function ShopeeSchedulesPage() {
       {/* voltar */}
       <div className="mt-4">
         <Link
-          href="/app/dashboard/shopee"
+          href="/dashboard/shopee"
           className="inline-flex items-center gap-2 rounded-lg border border-zinc-300/60 px-3 py-1.5 text-sm hover:bg-zinc-50"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -171,17 +192,17 @@ export default function ShopeeSchedulesPage() {
 
       {/* tabela */}
       <div className="mt-4 overflow-x-auto">
-        <div className="min-w-[1100px] rounded-2xl border border-zinc-200 overflow-hidden bg-white">
-          {/* cabeçalho */}
-          <div className="grid grid-cols-[220px_160px_1fr_140px_120px] items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
+        <div className="min-w-[1000px] rounded-2xl border border-zinc-200 overflow-hidden bg-white">
+          {/* header */}
+          <div className="grid grid-cols-[220px_160px_minmax(320px,1fr)_140px_150px] items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
             <div>Quando</div>
             <div>Plataforma</div>
-            <div>Link</div>
+            <div>Link (curto) / Legenda</div>
             <div>Status</div>
             <div className="text-right pr-1">Ações</div>
           </div>
 
-          {/* corpo */}
+          {/* body */}
           {loading ? (
             <div className="px-6 py-10 flex items-center gap-3 text-zinc-600">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -190,80 +211,93 @@ export default function ShopeeSchedulesPage() {
           ) : rows.length === 0 ? (
             <div className="px-6 py-10 text-zinc-600">Nenhum agendamento.</div>
           ) : (
-            rows.map((r) => (
-              <div
-                key={r.id}
-                className="grid grid-cols-[220px_160px_1fr_140px_120px] items-center px-4 py-3 border-t border-zinc-200/70"
-              >
-                {/* quando */}
-                <div className="flex items-start gap-2 text-sm">
-                  <CalendarClock className="mt-0.5 w-4 h-4 text-zinc-500" />
-                  <div className="leading-5">
-                    <div className="font-medium text-zinc-800">
-                      {fmtWhen(r.scheduled_at)}
-                    </div>
-                    <div className="text-[11px] text-zinc-500">
-                      {r.scheduled_at || "—"}
+            rows.map((r) => {
+              const display = shortenForDisplay(r.url_canonical || r.shortlink);
+              const href = r.shortlink || r.url_canonical || "#";
+              return (
+                <div
+                  key={r.id}
+                  className="grid grid-cols-[220px_160px_minmax(320px,1fr)_140px_150px] items-center px-4 py-3 border-t border-zinc-200/70"
+                >
+                  {/* quando */}
+                  <div className="flex items-start gap-2 text-sm">
+                    <CalendarClock className="mt-0.5 w-4 h-4 text-zinc-500" />
+                    <div className="leading-5">
+                      <div className="font-medium text-zinc-800">
+                        {fmtWhen(r.scheduled_at)}
+                      </div>
+                      <div className="text-[11px] text-zinc-500">
+                        {r.scheduled_at || "—"}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                {/* plataforma */}
-                <div className="text-sm text-zinc-800">
-                  <div className="uppercase text-[10px] tracking-wide text-zinc-500">
-                    {r.provider || "-"}
+                  {/* plataforma */}
+                  <div className="text-sm text-zinc-800">
+                    <div className="uppercase text-[10px] tracking-wide text-zinc-500">
+                      {r.provider || "-"}
+                    </div>
+                    <div className="mt-0.5">{r.platform || "-"}</div>
                   </div>
-                  <div className="mt-0.5">{r.platform || "-"}</div>
-                </div>
 
-                {/* link */}
-                <div className="text-sm">
-                  {r.shortlink ? (
-                    <a
-                      href={r.shortlink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-zinc-800 underline underline-offset-2 break-all pr-4"
-                    >
-                      {r.shortlink}
-                    </a>
-                  ) : (
-                    <span className="text-zinc-500">—</span>
-                  )}
-                </div>
-
-                {/* status */}
-                <div className="text-sm">
-                  <StatusPill s={r.status} />
-                </div>
-
-                {/* ações */}
-                <div className="flex justify-end pr-1">
-                  <button
-                    onClick={() => cancelOne(r.id)}
-                    disabled={
-                      rowBusy[r.id] ||
-                      r.status === "canceled" ||
-                      r.status === "done"
-                    }
-                    className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-zinc-50"
-                  >
-                    {rowBusy[r.id] ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                  {/* link curto + legenda (2 linhas máx) */}
+                  <div className="min-w-0 text-sm">
+                    {href && href !== "#" ? (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={href}
+                        className="text-zinc-800 underline underline-offset-2 block overflow-hidden text-ellipsis whitespace-nowrap"
+                      >
+                        {display}
+                      </a>
                     ) : (
-                      // usa mesmo ícone do refresh para ficar leve
-                      <span className="w-4 h-4 inline-block">✕</span>
+                      <span className="text-zinc-500">—</span>
                     )}
-                    Cancelar
-                  </button>
+
+                    {r.caption ? (
+                      <div
+                        title={r.caption || undefined}
+                        className="text-xs text-zinc-500 mt-0.5 line-clamp-2"
+                      >
+                        {r.caption}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* status */}
+                  <div className="text-sm">
+                    <StatusPill s={r.status} />
+                  </div>
+
+                  {/* ações */}
+                  <div className="flex justify-end pr-1 whitespace-nowrap">
+                    <button
+                      onClick={() => cancelOne(r.id)}
+                      disabled={
+                        rowBusy[r.id] ||
+                        r.status === "canceled" ||
+                        r.status === "done"
+                      }
+                      className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-zinc-50"
+                    >
+                      {rowBusy[r.id] ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <span className="w-4 h-4 inline-block">✕</span>
+                      )}
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
 
-      {/* erro global */}
+      {/* erro */}
       {errorMsg && (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           <AlertCircle className="w-4 h-4 mt-0.5" />
