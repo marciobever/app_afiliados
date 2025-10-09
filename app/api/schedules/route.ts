@@ -1,4 +1,3 @@
-// app/api/schedules/route.ts
 import { NextResponse } from 'next/server';
 import { requireSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
@@ -11,34 +10,18 @@ export async function GET(req: Request) {
 
     const sb = supabaseAdmin().schema('Produto_Afiliado');
 
-    let query = sb
+    let q = sb
       .from('schedules_queue')
-      // ⚠️ sem url_canonical; buscamos payload para extrair o url do produto
-      .select('id, provider, platform, caption, image_url, shortlink, scheduled_at, status, payload')
+      .select('id, provider, platform, caption, image_url, shortlink, scheduled_at, status')
       .eq('user_id', userId)
       .order('scheduled_at', { ascending: true });
 
-    if (status && status !== 'all') {
-      query = query.eq('status', status);
-    }
+    if (status && status !== 'all') q = q.eq('status', status);
 
-    const { data, error } = await query;
+    const { data, error } = await q;
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    // Monta resposta já com url_canonical derivado
-    const items = (data ?? []).map((r: any) => ({
-      id: r.id,
-      provider: r.provider,
-      platform: r.platform,
-      caption: r.caption,
-      image_url: r.image_url,
-      shortlink: r.shortlink,
-      url_canonical: r?.payload?.product?.url ?? null, // <- derivado do payload
-      scheduled_at: r.scheduled_at,
-      status: r.status,
-    }));
-
-    return NextResponse.json({ items });
+    return NextResponse.json({ items: data ?? [] });
   } catch (err: any) {
     if (err?.message === 'unauthorized') {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
