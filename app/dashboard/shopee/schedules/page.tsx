@@ -13,7 +13,7 @@ type Row = {
   caption?: string | null;
   image_url?: string | null;
   shortlink?: string | null;
-  url_canonical?: string | null; // pode vir undefined; ok
+  url_canonical?: string | null;
   scheduled_at: string | null;
   status: 'queued' | 'claimed' | 'error' | 'done' | 'canceled' | string;
 };
@@ -24,8 +24,7 @@ function fmtDateShort(iso: string | null) {
   if (!iso) return '—';
   const d = new Date(iso);
   if (isNaN(+d)) return iso || '—';
-  // Ex.: "08/10/2025, 23:34"
-  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }); // ex: 08/10/2025, 23:34
 }
 
 function shortText(s?: string | null, max = 36) {
@@ -82,10 +81,8 @@ export default function ShopeeSchedulesPage() {
     setErrorMsg(null);
     try {
       const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error || `HTTP ${res.status}`);
-      }
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
       setRows((arr) => arr.filter((r) => r.id !== id));
     } catch (e: any) {
       setErrorMsg(e?.message || 'Não foi possível cancelar.');
@@ -94,30 +91,42 @@ export default function ShopeeSchedulesPage() {
     }
   }
 
-  // prompt simples para reagendar
-  function isoFromLocalStr(s: string) {
-    const m = s.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/);
-    if (!m) return null;
-    const [, Y, M, D, h, mnt] = m;
-    const d = new Date(Number(Y), Number(M) - 1, Number(D), Number(h), Number(mnt), 0, 0);
+  // aceita "YYYY-MM-DD HH:mm" e "DD/MM/YYYY HH:mm" -> ISO
+  function parseClientInputToIso(s: string) {
+    s = (s || '').trim();
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/);
+    if (m) {
+      const [, Y, M, D, h, min] = m;
+      const d = new Date(+Y, +M - 1, +D, +h, +min);
+      return isNaN(+d) ? null : d.toISOString();
+    }
+    m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})[ ,T](\d{2}):(\d{2})$/);
+    if (m) {
+      const [, D, M, Y, h, min] = m;
+      const d = new Date(+Y, +M - 1, +D, +h, +min);
+      return isNaN(+d) ? null : d.toISOString();
+    }
+    const d = new Date(s);
     return isNaN(+d) ? null : d.toISOString();
   }
 
   async function rescheduleOne(id: string, currentIso?: string | null) {
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');
+    const d0 = currentIso ? new Date(currentIso) : now;
+    const suggestion = `${pad(d0.getDate())}/${pad(d0.getMonth() + 1)}/${d0.getFullYear()} ${pad(
+      d0.getHours()
+    )}:${pad(d0.getMinutes())}`;
 
-    const currentLocal = currentIso ? new Date(currentIso) : now;
-    const suggestion = `${currentLocal.getFullYear()}-${pad(currentLocal.getMonth() + 1)}-${pad(
-      currentLocal.getDate()
-    )} ${pad(currentLocal.getHours())}:${pad(currentLocal.getMinutes())}`;
-
-    const answer = window.prompt('Nova data/hora (formato: YYYY-MM-DD HH:mm — horário local):', suggestion);
+    const answer = window.prompt(
+      'Nova data/hora (aceita: DD/MM/YYYY HH:mm ou YYYY-MM-DD HH:mm):',
+      suggestion
+    );
     if (!answer) return;
 
-    const iso = isoFromLocalStr(answer);
+    const iso = parseClientInputToIso(answer);
     if (!iso) {
-      setErrorMsg('Formato inválido. Use YYYY-MM-DD HH:mm.');
+      setErrorMsg('Formato inválido. Use DD/MM/YYYY HH:mm ou YYYY-MM-DD HH:mm.');
       return;
     }
 
@@ -127,16 +136,15 @@ export default function ShopeeSchedulesPage() {
       const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        // 👇 FIX: o endpoint espera `scheduleTime`
-        body: JSON.stringify({ scheduleTime: iso }),
+        // ✅ o backend espera `scheduled_at`
+        body: JSON.stringify({ scheduled_at: iso }),
       });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error || `HTTP ${res.status}`);
-      }
-      const j = await res.json();
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
       setRows((arr) =>
-        arr.map((r) => (r.id === id ? { ...r, scheduled_at: j.scheduled_at ?? iso, status: j.status ?? r.status } : r))
+        arr.map((r) =>
+          r.id === id ? { ...r, scheduled_at: j.scheduled_at ?? iso, status: j.status ?? r.status } : r
+        )
       );
     } catch (e: any) {
       setErrorMsg(e?.message || 'Não foi possível reagendar.');
@@ -147,16 +155,13 @@ export default function ShopeeSchedulesPage() {
 
   return (
     <div className="relative max-w-6xl mx-auto px-4 pb-16">
-      {/* fundo suave */}
       <div
         aria-hidden
         className="pointer-events-none select-none absolute inset-x-0 -top-8 h-28 -z-10"
         style={{ background: 'radial-gradient(80% 120% at 0% 0%, #FFF4F0 0%, transparent 70%)' }}
       />
-
       <SectionHeader emoji="🗓️" title="Agendamentos" subtitle="Gerencie as publicações programadas desta conta." />
 
-      {/* voltar */}
       <div className="mt-4">
         <Link
           href="/dashboard/shopee"
@@ -167,7 +172,6 @@ export default function ShopeeSchedulesPage() {
         </Link>
       </div>
 
-      {/* filtros / refresh */}
       <div className="mt-4 flex items-center gap-3">
         <div className="ml-auto flex items-center gap-2">
           <label className="text-sm text-zinc-600">Status:</label>
@@ -194,11 +198,10 @@ export default function ShopeeSchedulesPage() {
         </div>
       </div>
 
-      {/* TABLE (md+) */}
+      {/* Tabela (md+) */}
       <div className="mt-4 hidden md:block">
         <div className="overflow-x-auto">
           <div className="min-w-[980px] rounded-2xl border border-zinc-200 overflow-hidden bg-white">
-            {/* header: Quando | Plataforma | Legenda & Link | Status | Ações */}
             <div className="grid grid-cols-[220px_160px_1fr_120px_120px] items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
               <div>Quando</div>
               <div>Plataforma</div>
@@ -207,7 +210,6 @@ export default function ShopeeSchedulesPage() {
               <div className="text-right pr-1">Ações</div>
             </div>
 
-            {/* body */}
             {loading ? (
               <div className="px-6 py-10 flex items-center gap-3 text-zinc-600">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -221,19 +223,16 @@ export default function ShopeeSchedulesPage() {
                   key={r.id}
                   className="grid grid-cols-[220px_160px_1fr_120px_120px] items-start px-4 py-3 border-t border-zinc-200/70"
                 >
-                  {/* quando */}
                   <div className="flex items-start gap-2 text-sm">
                     <CalendarClock className="mt-0.5 w-4 h-4 text-zinc-500" />
                     <div className="leading-5 font-medium text-zinc-800">{fmtDateShort(r.scheduled_at)}</div>
                   </div>
 
-                  {/* plataforma */}
                   <div className="text-sm text-zinc-800">
                     <div className="uppercase text-[10px] tracking-wide text-zinc-500">{r.provider || '-'}</div>
                     <div className="mt-0.5">{r.platform || '-'}</div>
                   </div>
 
-                  {/* legenda & link */}
                   <div className="text-sm pr-4">
                     {r.caption ? (
                       <div className="text-zinc-800 break-words">
@@ -269,12 +268,10 @@ export default function ShopeeSchedulesPage() {
                     </div>
                   </div>
 
-                  {/* status */}
                   <div className="text-sm">
                     <StatusPill s={r.status} />
                   </div>
 
-                  {/* ações: vertical para não “comer” botão */}
                   <div className="flex flex-col items-stretch gap-2 pr-1">
                     <button
                       onClick={() => rescheduleOne(r.id, r.scheduled_at)}
@@ -300,7 +297,7 @@ export default function ShopeeSchedulesPage() {
         </div>
       </div>
 
-      {/* CARDS (mobile) */}
+      {/* Cards (mobile) */}
       <div className="mt-4 md:hidden space-y-3">
         {loading ? (
           <div className="px-2 py-6 flex items-center gap-3 text-zinc-600">
@@ -379,7 +376,6 @@ export default function ShopeeSchedulesPage() {
         )}
       </div>
 
-      {/* erro global */}
       {errorMsg && (
         <div className="mt-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
           <AlertCircle className="w-4 h-4 mt-0.5" />
