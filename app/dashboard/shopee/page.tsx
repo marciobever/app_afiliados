@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import { ShoppingCart, Clock } from 'lucide-react';
+import Link from 'next/link';
+import { ShoppingCart, Clock, CalendarClock } from 'lucide-react';
 import { Tabs, SectionHeader } from '@/components/ui';
 import Products from './Products';
 import History from './History';
@@ -21,6 +22,17 @@ export default function ShopeeDashboardPage() {
         title="Shopee — Painel de Conteúdo"
         subtitle="Selecione produtos e gere legendas automáticas com CTA para Facebook ou Instagram."
       />
+
+      {/* ação no topo: vai para a lista de agendamentos */}
+      <div className="flex justify-end">
+        <Link
+          href="/dashboard/shopee/schedules"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-gray-200 text-sm hover:bg-gray-50"
+        >
+          <CalendarClock className="w-4 h-4" />
+          Agendamentos
+        </Link>
+      </div>
 
       <div>
         <Tabs<Tab>
