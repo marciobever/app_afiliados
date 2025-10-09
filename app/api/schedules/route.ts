@@ -13,7 +13,8 @@ export async function GET(req: Request) {
 
     let query = sb
       .from('schedules_queue')
-      .select('id, provider, platform, caption, image_url, shortlink, url_canonical, scheduled_at, status')
+      // ⚠️ sem url_canonical; buscamos payload para extrair o url do produto
+      .select('id, provider, platform, caption, image_url, shortlink, scheduled_at, status, payload')
       .eq('user_id', userId)
       .order('scheduled_at', { ascending: true });
 
@@ -24,7 +25,20 @@ export async function GET(req: Request) {
     const { data, error } = await query;
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    return NextResponse.json({ items: data ?? [] });
+    // Monta resposta já com url_canonical derivado
+    const items = (data ?? []).map((r: any) => ({
+      id: r.id,
+      provider: r.provider,
+      platform: r.platform,
+      caption: r.caption,
+      image_url: r.image_url,
+      shortlink: r.shortlink,
+      url_canonical: r?.payload?.product?.url ?? null, // <- derivado do payload
+      scheduled_at: r.scheduled_at,
+      status: r.status,
+    }));
+
+    return NextResponse.json({ items });
   } catch (err: any) {
     if (err?.message === 'unauthorized') {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
