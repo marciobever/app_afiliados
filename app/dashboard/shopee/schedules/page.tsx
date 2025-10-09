@@ -18,8 +18,8 @@ type Row = {
   platform: string;
   caption?: string | null;
   image_url?: string | null;
-  shortlink?: string | null;       // com UTM (href usa este)
-  url_canonical?: string | null;   // curto sem UTM (display preferido)
+  shortlink?: string | null;       // link com UTM (href)
+  url_canonical?: string | null;   // link curto p/ mostrar
   scheduled_at: string | null;
   status: "queued" | "claimed" | "error" | "done" | "canceled" | string;
 };
@@ -45,15 +45,14 @@ function fmtWhen(iso: string | null) {
   }
 }
 
-// texto curto e estável para mostrar (sem query/hash)
+// texto curto (host/slug) para exibir
 function shortenForDisplay(u?: string | null) {
   if (!u) return "—";
   try {
     const url = new URL(u);
     const host = url.host;
-    const path = url.pathname.replace(/\/+$/, "");
-    const seg = path.split("/").filter(Boolean);
-    const last = seg[seg.length - 1] || "";
+    const segs = url.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+    const last = segs[segs.length - 1] || "";
     return last ? `${host}/${last}` : host;
   } catch {
     const noProto = u.replace(/^https?:\/\//, "");
@@ -191,7 +190,7 @@ export default function ShopeeSchedulesPage() {
       <div className="mt-4 overflow-x-auto">
         <div className="min-w-[1200px] rounded-2xl border border-zinc-200 overflow-hidden bg-white">
           {/* header */}
-          <div className="grid grid-cols-[220px_150px_minmax(280px,1fr)_minmax(220px,1fr)_120px_150px] items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
+          <div className="grid grid-cols-[220px_150px_minmax(320px,1fr)_minmax(280px,1fr)_120px_150px] gap-x-4 items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
             <div>Quando</div>
             <div>Plataforma</div>
             <div>Legenda</div>
@@ -215,7 +214,7 @@ export default function ShopeeSchedulesPage() {
               return (
                 <div
                   key={r.id}
-                  className="grid grid-cols-[220px_150px_minmax(280px,1fr)_minmax(220px,1fr)_120px_150px] items-center px-4 py-3 border-t border-zinc-200/70"
+                  className="grid grid-cols-[220px_150px_minmax(320px,1fr)_minmax(280px,1fr)_120px_150px] gap-x-4 items-start px-4 py-3 border-t border-zinc-200/70"
                 >
                   {/* quando */}
                   <div className="flex items-start gap-2 text-sm">
@@ -238,7 +237,7 @@ export default function ShopeeSchedulesPage() {
                     <div className="mt-0.5">{r.platform || "-"}</div>
                   </div>
 
-                  {/* legenda (clamp 2 linhas) */}
+                  {/* legenda – pode quebrar até 2 linhas */}
                   <div className="min-w-0">
                     {r.caption ? (
                       <div
@@ -252,7 +251,7 @@ export default function ShopeeSchedulesPage() {
                     )}
                   </div>
 
-                  {/* link (curto, sem quebrar) */}
+                  {/* link – quebra até 2 linhas (sem espatifar layout) */}
                   <div className="min-w-0">
                     {href && href !== "#" ? (
                       <a
@@ -260,7 +259,7 @@ export default function ShopeeSchedulesPage() {
                         target="_blank"
                         rel="noreferrer"
                         title={href}
-                        className="text-sm text-zinc-800 underline underline-offset-2 block overflow-hidden text-ellipsis whitespace-nowrap"
+                        className="text-sm text-zinc-800 underline underline-offset-2 block break-words whitespace-normal line-clamp-2"
                       >
                         {display}
                       </a>
