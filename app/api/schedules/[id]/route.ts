@@ -3,23 +3,6 @@ import { NextResponse } from 'next/server';
 import { requireSession } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
-function normalizeToIsoZ(input: string) {
-  // aceita 'YYYY-MM-DDTHH:mm(:ss)?(Z|±hh:mm)?' ou 'YYYY-MM-DD HH:mm(:ss)?'
-  let s = String(input).trim();
-  if (!s) return null;
-
-  const hasTZ = /[zZ]|[+-]\d{2}:\d{2}$/.test(s);
-  if (!hasTZ) {
-    // troca espaço por 'T' e anexa 'Z' se não tiver timezone
-    s = s.replace(' ', 'T');
-    if (!/[zZ]$/.test(s)) s = s + 'Z';
-  }
-
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString();
-}
-
 export async function DELETE(
   _req: Request,
   { params }: { params: { id: string } }
@@ -27,6 +10,7 @@ export async function DELETE(
   try {
     const { userId } = requireSession();
     const nowIso = new Date().toISOString();
+
     const sb = supabaseAdmin().schema('Produto_Afiliado');
 
     const { data, error } = await sb
@@ -35,11 +19,14 @@ export async function DELETE(
       .eq('id', params.id)
       .eq('user_id', userId)
       .in('status', ['queued', 'claimed'])
-      .select('id')
+      .select('id, n8n_execution_id')
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!data)  return NextResponse.json({ error: 'not found or not cancelable' }, { status: 404 });
+
+    // TODO opcional: cancelar execução no n8n se você salvar o id
+    // if (data.n8n_execution_id) { ... }
 
     return NextResponse.json({ ok: true, id: data.id });
   } catch (err: any) {
@@ -57,38 +44,64 @@ export async function PATCH(
   try {
     const { userId } = requireSession();
     const body = await req.json().catch(() => ({} as any));
-    const raw = body?.scheduleTime ?? body?.scheduled_at;
-    const iso = typeof raw === 'string' ? normalizeToIsoZ(raw) : null;
+    const scheduled_at_raw: string | null =
+      body?.scheduled_at ?? body?.scheduleTime ?? null;
 
+    if (!scheduled_at_raw) {
+      return NextResponse.json({ error: 'scheduled_at required' }, { status: 400 });
+    }
+
+    // Aceita ISO ou “YYYY-MM-DD HH:mm” local => armazena como timestamptz
+    function parseToIsoZ(input: string): string | null {
+      const t = input.trim();
+      if (/^\d{4}-\d{2}-\d{2}T/.test(t)) {
+        // ISO vindo do cliente
+        const d = new Date(t);
+        return isNaN(+d) ? null : d.toISOString();
+      }
+      // "YYYY-MM-DD HH:mm"
+      const m = t.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/);
+      if (m) {
+        const [_, Y, M, D, h, mnt] = m;
+        const d = new Date(
+          Number(Y),
+          Number(M) - 1,
+          Number(D),
+          Number(h),
+          Number(mnt),
+          0,
+          0
+        );
+        return isNaN(+d) ? null : d.toISOString();
+      }
+      return null;
+      }
+
+    const iso = parseToIsoZ(scheduled_at_raw);
     if (!iso) {
-      return NextResponse.json(
-        { error: 'invalid scheduleTime; expected ISO string' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'invalid schedule format' }, { status: 400 });
     }
 
-    // (opcional) impede reagendar para o passado
-    if (new Date(iso).getTime() < Date.now() - 5_000) {
-      return NextResponse.json(
-        { error: 'scheduleTime must be in the future' },
-        { status: 400 }
-      );
-    }
-
+    const nowIso = new Date().toISOString();
     const sb = supabaseAdmin().schema('Produto_Afiliado');
+
     const { data, error } = await sb
       .from('schedules_queue')
-      .update({ scheduled_at: iso, status: 'queued', updated_at: new Date().toISOString() })
+      .update({
+        scheduled_at: iso,
+        status: 'queued',
+        done_at: null,
+        updated_at: nowIso,
+      })
       .eq('id', params.id)
       .eq('user_id', userId)
-      .in('status', ['queued', 'claimed']) // só permite reagendar se ainda não executou
-      .select('id, scheduled_at')
+      .select('id, scheduled_at, status')
       .maybeSingle();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    if (!data)  return NextResponse.json({ error: 'not found or not reschedulable' }, { status: 404 });
+    if (!data)  return NextResponse.json({ error: 'not found' }, { status: 404 });
 
-    return NextResponse.json({ ok: true, id: data.id, scheduled_at: data.scheduled_at });
+    return NextResponse.json({ ok: true, id: data.id, scheduled_at: data.scheduled_at, status: data.status });
   } catch (err: any) {
     if (err?.message === 'unauthorized') {
       return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
