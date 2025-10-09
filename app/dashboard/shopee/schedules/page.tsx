@@ -4,7 +4,6 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { SectionHeader } from '@/components/ui';
-import { useRouter } from 'next/navigation';
 import { ArrowLeft, CalendarClock, RefreshCw, Loader2, AlertCircle } from 'lucide-react';
 
 type Row = {
@@ -14,7 +13,7 @@ type Row = {
   caption?: string | null;
   image_url?: string | null;
   shortlink?: string | null;
-  url_canonical?: string | null;
+  url_canonical?: string | null; // pode vir undefined; ok
   scheduled_at: string | null;
   status: 'queued' | 'claimed' | 'error' | 'done' | 'canceled' | string;
 };
@@ -48,7 +47,6 @@ function StatusPill({ s }: { s: Row['status'] }) {
 }
 
 export default function ShopeeSchedulesPage() {
-  const router = useRouter();
   const [status, setStatus] = React.useState<StatusFilter>('all');
   const [loading, setLoading] = React.useState(true);
   const [rows, setRows] = React.useState<Row[]>([]);
@@ -96,7 +94,7 @@ export default function ShopeeSchedulesPage() {
     }
   }
 
-  // prompt simples para reagendar (rápido e não quebra layout)
+  // prompt simples para reagendar
   function isoFromLocalStr(s: string) {
     const m = s.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/);
     if (!m) return null;
@@ -114,10 +112,7 @@ export default function ShopeeSchedulesPage() {
       currentLocal.getDate()
     )} ${pad(currentLocal.getHours())}:${pad(currentLocal.getMinutes())}`;
 
-    const answer = window.prompt(
-      'Nova data/hora (formato: YYYY-MM-DD HH:mm — horário local):',
-      suggestion
-    );
+    const answer = window.prompt('Nova data/hora (formato: YYYY-MM-DD HH:mm — horário local):', suggestion);
     if (!answer) return;
 
     const iso = isoFromLocalStr(answer);
@@ -132,14 +127,14 @@ export default function ShopeeSchedulesPage() {
       const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduled_at: iso }),
+        // 👇 FIX: o endpoint espera `scheduleTime`
+        body: JSON.stringify({ scheduleTime: iso }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j?.error || `HTTP ${res.status}`);
       }
       const j = await res.json();
-      // atualiza a linha no estado
       setRows((arr) =>
         arr.map((r) => (r.id === id ? { ...r, scheduled_at: j.scheduled_at ?? iso, status: j.status ?? r.status } : r))
       );
@@ -207,7 +202,7 @@ export default function ShopeeSchedulesPage() {
             <div className="grid grid-cols-[220px_160px_1fr_120px_120px] items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
               <div>Quando</div>
               <div>Plataforma</div>
-              <div>Legenda & Link</div>
+              <div>Legenda &amp; Link</div>
               <div>Status</div>
               <div className="text-right pr-1">Ações</div>
             </div>
@@ -224,7 +219,7 @@ export default function ShopeeSchedulesPage() {
               rows.map((r) => (
                 <div
                   key={r.id}
-                  className="grid grid-cols-[220px_160px_1fr_120px_120px] items-center px-4 py-3 border-t border-zinc-200/70"
+                  className="grid grid-cols-[220px_160px_1fr_120px_120px] items-start px-4 py-3 border-t border-zinc-200/70"
                 >
                   {/* quando */}
                   <div className="flex items-start gap-2 text-sm">
@@ -238,10 +233,12 @@ export default function ShopeeSchedulesPage() {
                     <div className="mt-0.5">{r.platform || '-'}</div>
                   </div>
 
-                  {/* legenda & link (limita quebra) */}
+                  {/* legenda & link */}
                   <div className="text-sm pr-4">
                     {r.caption ? (
-                      <div className="text-zinc-800 line-clamp-2 break-words">{r.caption}</div>
+                      <div className="text-zinc-800 break-words">
+                        <div className="line-clamp-2">{r.caption}</div>
+                      </div>
                     ) : (
                       <div className="text-zinc-500">Sem legenda</div>
                     )}
@@ -277,7 +274,7 @@ export default function ShopeeSchedulesPage() {
                     <StatusPill s={r.status} />
                   </div>
 
-                  {/* ações (vertical) */}
+                  {/* ações: vertical para não “comer” botão */}
                   <div className="flex flex-col items-stretch gap-2 pr-1">
                     <button
                       onClick={() => rescheduleOne(r.id, r.scheduled_at)}
@@ -324,7 +321,9 @@ export default function ShopeeSchedulesPage() {
               </div>
               <div className="text-sm">
                 {r.caption ? (
-                  <div className="text-zinc-800 line-clamp-3 break-words">{r.caption}</div>
+                  <div className="text-zinc-800 break-words">
+                    <div className="line-clamp-3">{r.caption}</div>
+                  </div>
                 ) : (
                   <div className="text-zinc-500">Sem legenda</div>
                 )}
