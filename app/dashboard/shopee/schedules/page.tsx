@@ -19,7 +19,7 @@ type Row = {
   caption?: string | null;
   image_url?: string | null;
   shortlink?: string | null;       // com UTM (href usa este)
-  url_canonical?: string | null;   // curto sem UTM (quando existir)
+  url_canonical?: string | null;   // curto sem UTM (display preferido)
   scheduled_at: string | null;
   status: "queued" | "claimed" | "error" | "done" | "canceled" | string;
 };
@@ -45,7 +45,7 @@ function fmtWhen(iso: string | null) {
   }
 }
 
-// Retorna um texto curto e estável para mostrar (sem query/hash)
+// texto curto e estável para mostrar (sem query/hash)
 function shortenForDisplay(u?: string | null) {
   if (!u) return "—";
   try {
@@ -54,11 +54,8 @@ function shortenForDisplay(u?: string | null) {
     const path = url.pathname.replace(/\/+$/, "");
     const seg = path.split("/").filter(Boolean);
     const last = seg[seg.length - 1] || "";
-    // Para shortlinks (ex.: s.shopee.com.br/4LAbOlg1kB) mostramos host/slug
-    if (last) return `${host}/${last}`;
-    return host;
+    return last ? `${host}/${last}` : host;
   } catch {
-    // fallback: remove proto + query/hash
     const noProto = u.replace(/^https?:\/\//, "");
     const [noHash] = noProto.split("#");
     const [base] = noHash.split("?");
@@ -192,12 +189,13 @@ export default function ShopeeSchedulesPage() {
 
       {/* tabela */}
       <div className="mt-4 overflow-x-auto">
-        <div className="min-w-[1000px] rounded-2xl border border-zinc-200 overflow-hidden bg-white">
+        <div className="min-w-[1200px] rounded-2xl border border-zinc-200 overflow-hidden bg-white">
           {/* header */}
-          <div className="grid grid-cols-[220px_160px_minmax(320px,1fr)_140px_150px] items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
+          <div className="grid grid-cols-[220px_150px_minmax(280px,1fr)_minmax(220px,1fr)_120px_150px] items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
             <div>Quando</div>
             <div>Plataforma</div>
-            <div>Link (curto) / Legenda</div>
+            <div>Legenda</div>
+            <div>Link</div>
             <div>Status</div>
             <div className="text-right pr-1">Ações</div>
           </div>
@@ -212,12 +210,12 @@ export default function ShopeeSchedulesPage() {
             <div className="px-6 py-10 text-zinc-600">Nenhum agendamento.</div>
           ) : (
             rows.map((r) => {
-              const display = shortenForDisplay(r.url_canonical || r.shortlink);
               const href = r.shortlink || r.url_canonical || "#";
+              const display = shortenForDisplay(r.url_canonical || r.shortlink);
               return (
                 <div
                   key={r.id}
-                  className="grid grid-cols-[220px_160px_minmax(320px,1fr)_140px_150px] items-center px-4 py-3 border-t border-zinc-200/70"
+                  className="grid grid-cols-[220px_150px_minmax(280px,1fr)_minmax(220px,1fr)_120px_150px] items-center px-4 py-3 border-t border-zinc-200/70"
                 >
                   {/* quando */}
                   <div className="flex items-start gap-2 text-sm">
@@ -240,30 +238,35 @@ export default function ShopeeSchedulesPage() {
                     <div className="mt-0.5">{r.platform || "-"}</div>
                   </div>
 
-                  {/* link curto + legenda (2 linhas máx) */}
-                  <div className="min-w-0 text-sm">
+                  {/* legenda (clamp 2 linhas) */}
+                  <div className="min-w-0">
+                    {r.caption ? (
+                      <div
+                        title={r.caption || undefined}
+                        className="text-sm text-zinc-800 line-clamp-2"
+                      >
+                        {r.caption}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-zinc-500">—</span>
+                    )}
+                  </div>
+
+                  {/* link (curto, sem quebrar) */}
+                  <div className="min-w-0">
                     {href && href !== "#" ? (
                       <a
                         href={href}
                         target="_blank"
                         rel="noreferrer"
                         title={href}
-                        className="text-zinc-800 underline underline-offset-2 block overflow-hidden text-ellipsis whitespace-nowrap"
+                        className="text-sm text-zinc-800 underline underline-offset-2 block overflow-hidden text-ellipsis whitespace-nowrap"
                       >
                         {display}
                       </a>
                     ) : (
-                      <span className="text-zinc-500">—</span>
+                      <span className="text-sm text-zinc-500">—</span>
                     )}
-
-                    {r.caption ? (
-                      <div
-                        title={r.caption || undefined}
-                        className="text-xs text-zinc-500 mt-0.5 line-clamp-2"
-                      >
-                        {r.caption}
-                      </div>
-                    ) : null}
                   </div>
 
                   {/* status */}
