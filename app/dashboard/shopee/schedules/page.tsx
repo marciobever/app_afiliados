@@ -1,9 +1,7 @@
-// app/dashboard/shopee/schedules/page.tsx
 "use client";
 
 import * as React from "react";
 import Link from "next/link";
-import { SectionHeader } from "@/components/ui";
 import {
   ArrowLeft,
   CalendarClock,
@@ -26,6 +24,7 @@ type Row = {
 
 type StatusFilter = "all" | "queued" | "claimed" | "error" | "done" | "canceled";
 
+/* ---------- helpers ---------- */
 function fmtWhen(iso: string | null) {
   if (!iso) return "—";
   try {
@@ -45,7 +44,6 @@ function fmtWhen(iso: string | null) {
   }
 }
 
-// texto curto (host/slug) para exibir
 function shortenForDisplay(u?: string | null) {
   if (!u) return "—";
   try {
@@ -64,6 +62,24 @@ function shortenForDisplay(u?: string | null) {
   }
 }
 
+function isoToLocalInputValue(iso?: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const y = d.getFullYear();
+  const m = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  return `${y}-${m}-${day}T${hh}:${mm}`;
+}
+
+function localInputToIsoUtc(localStr: string) {
+  // new Date('YYYY-MM-DDTHH:mm') interpreta no fuso local
+  const d = new Date(localStr);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 function StatusPill({ s }: { s: Row["status"] }) {
   const map: Record<string, string> = {
     queued: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
@@ -80,12 +96,24 @@ function StatusPill({ s }: { s: Row["status"] }) {
   );
 }
 
+/* ---------- page ---------- */
 export default function ShopeeSchedulesPage() {
   const [status, setStatus] = React.useState<StatusFilter>("all");
   const [loading, setLoading] = React.useState(true);
   const [rows, setRows] = React.useState<Row[]>([]);
-  const [rowBusy, setRowBusy] = React.useState<Record<string, boolean>>({});
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+
+  // busy flags
+  const [busyCancel, setBusyCancel] = React.useState<Record<string, boolean>>(
+    {}
+  );
+  const [busyResched, setBusyResched] = React.useState<Record<string, boolean>>(
+    {}
+  );
+
+  // reschedule inline editor
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [editLocal, setEditLocal] = React.useState<string>("");
 
   async function fetchData(s: StatusFilter) {
     setLoading(true);
@@ -112,7 +140,7 @@ export default function ShopeeSchedulesPage() {
   }, [status]);
 
   async function cancelOne(id: string) {
-    setRowBusy((m) => ({ ...m, [id]: true }));
+    setBusyCancel((m) => ({ ...m, [id]: true }));
     setErrorMsg(null);
     try {
       const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`, {
@@ -126,30 +154,59 @@ export default function ShopeeSchedulesPage() {
     } catch (e: any) {
       setErrorMsg(e?.message || "Não foi possível cancelar.");
     } finally {
-      setRowBusy((m) => ({ ...m, [id]: false }));
+      setBusyCancel((m) => ({ ...m, [id]: false }));
     }
   }
 
+  function openResched(r: Row) {
+    setEditingId(r.id);
+    setEditLocal(isoToLocalInputValue(r.scheduled_at));
+  }
+
+  function closeResched() {
+    setEditingId(null);
+    setEditLocal("");
+  }
+
+  async function saveResched(id: string) {
+    if (!editLocal) return;
+    const iso = localInputToIsoUtc(editLocal);
+    if (!iso) {
+      setErrorMsg("Datetime inválido.");
+      return;
+    }
+    setBusyResched((m) => ({ ...m, [id]: true }));
+    setErrorMsg(null);
+    try {
+      const res = await fetch(`/api/schedules/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduled_at: iso }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error || `HTTP ${res.status}`);
+      }
+      // atualiza linha localmente
+      setRows((arr) =>
+        arr.map((r) =>
+          r.id === id ? { ...r, scheduled_at: iso, status: "queued" } : r
+        )
+      );
+      closeResched();
+    } catch (e: any) {
+      setErrorMsg(e?.message || "Não foi possível reagendar.");
+    } finally {
+      setBusyResched((m) => ({ ...m, [id]: false }));
+    }
+  }
+
+  const minLocal = isoToLocalInputValue(new Date().toISOString());
+
   return (
     <div className="relative max-w-6xl mx-auto px-4 pb-16">
-      {/* halo topo */}
-      <div
-        aria-hidden
-        className="pointer-events-none select-none absolute inset-x-0 -top-8 h-28 -z-10"
-        style={{
-          background:
-            "radial-gradient(80% 120% at 0% 0%, #FFF4F0 0%, transparent 70%)",
-        }}
-      />
-
-      <SectionHeader
-        emoji="🗓️"
-        title="Agendamentos"
-        subtitle="Gerencie as publicações programadas desta conta."
-      />
-
-      {/* voltar */}
-      <div className="mt-4">
+      {/* topo compacto: só botões/controles */}
+      <div className="mt-6 flex items-center gap-3">
         <Link
           href="/dashboard/shopee"
           className="inline-flex items-center gap-2 rounded-lg border border-zinc-300/60 px-3 py-1.5 text-sm hover:bg-zinc-50"
@@ -157,10 +214,7 @@ export default function ShopeeSchedulesPage() {
           <ArrowLeft className="w-4 h-4" />
           Voltar ao painel
         </Link>
-      </div>
 
-      {/* filtros / refresh */}
-      <div className="mt-4 flex items-center gap-3">
         <div className="ml-auto flex items-center gap-2">
           <label className="text-sm text-zinc-600">Status:</label>
           <select
@@ -176,7 +230,7 @@ export default function ShopeeSchedulesPage() {
             <option value="error">error</option>
           </select>
 
-          <button
+        <button
             onClick={() => fetchData(status)}
             className="inline-flex items-center gap-2 rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50"
           >
@@ -190,7 +244,7 @@ export default function ShopeeSchedulesPage() {
       <div className="mt-4 overflow-x-auto">
         <div className="min-w-[1200px] rounded-2xl border border-zinc-200 overflow-hidden bg-white">
           {/* header */}
-          <div className="grid grid-cols-[220px_150px_minmax(320px,1fr)_minmax(280px,1fr)_120px_150px] gap-x-4 items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
+          <div className="grid grid-cols-[220px_150px_minmax(320px,1fr)_minmax(280px,1fr)_120px_190px] gap-x-4 items-center bg-zinc-50/60 px-4 py-3 text-xs font-medium text-zinc-600">
             <div>Quando</div>
             <div>Plataforma</div>
             <div>Legenda</div>
@@ -211,21 +265,19 @@ export default function ShopeeSchedulesPage() {
             rows.map((r) => {
               const href = r.shortlink || r.url_canonical || "#";
               const display = shortenForDisplay(r.url_canonical || r.shortlink);
+
+              const isEditing = editingId === r.id;
+
               return (
                 <div
                   key={r.id}
-                  className="grid grid-cols-[220px_150px_minmax(320px,1fr)_minmax(280px,1fr)_120px_150px] gap-x-4 items-start px-4 py-3 border-t border-zinc-200/70"
+                  className="grid grid-cols-[220px_150px_minmax(320px,1fr)_minmax(280px,1fr)_120px_190px] gap-x-4 items-start px-4 py-3 border-t border-zinc-200/70"
                 >
-                  {/* quando */}
+                  {/* quando – só linha amigável */}
                   <div className="flex items-start gap-2 text-sm">
                     <CalendarClock className="mt-0.5 w-4 h-4 text-zinc-500" />
-                    <div className="leading-5">
-                      <div className="font-medium text-zinc-800">
-                        {fmtWhen(r.scheduled_at)}
-                      </div>
-                      <div className="text-[11px] text-zinc-500">
-                        {r.scheduled_at || "—"}
-                      </div>
+                    <div className="leading-5 font-medium text-zinc-800">
+                      {fmtWhen(r.scheduled_at)}
                     </div>
                   </div>
 
@@ -237,7 +289,7 @@ export default function ShopeeSchedulesPage() {
                     <div className="mt-0.5">{r.platform || "-"}</div>
                   </div>
 
-                  {/* legenda – pode quebrar até 2 linhas */}
+                  {/* legenda – até 2 linhas */}
                   <div className="min-w-0">
                     {r.caption ? (
                       <div
@@ -251,7 +303,7 @@ export default function ShopeeSchedulesPage() {
                     )}
                   </div>
 
-                  {/* link – quebra até 2 linhas (sem espatifar layout) */}
+                  {/* link curto – até 2 linhas */}
                   <div className="min-w-0">
                     {href && href !== "#" ? (
                       <a
@@ -274,23 +326,60 @@ export default function ShopeeSchedulesPage() {
                   </div>
 
                   {/* ações */}
-                  <div className="flex justify-end pr-1 whitespace-nowrap">
-                    <button
-                      onClick={() => cancelOne(r.id)}
-                      disabled={
-                        rowBusy[r.id] ||
-                        r.status === "canceled" ||
-                        r.status === "done"
-                      }
-                      className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-zinc-50"
-                    >
-                      {rowBusy[r.id] ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <span className="w-4 h-4 inline-block">✕</span>
-                      )}
-                      Cancelar
-                    </button>
+                  <div className="flex justify-end pr-1">
+                    {isEditing ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="datetime-local"
+                          className="border border-zinc-300 rounded-md px-2 py-1 text-sm"
+                          min={minLocal}
+                          value={editLocal}
+                          onChange={(e) => setEditLocal(e.target.value)}
+                        />
+                        <button
+                          onClick={() => saveResched(r.id)}
+                          disabled={busyResched[r.id]}
+                          className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-zinc-50"
+                        >
+                          {busyResched[r.id] ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : null}
+                          Salvar
+                        </button>
+                        <button
+                          onClick={closeResched}
+                          className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm hover:bg-zinc-50"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openResched(r)}
+                          disabled={r.status === "done"}
+                          className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-zinc-50"
+                        >
+                          Reagendar
+                        </button>
+                        <button
+                          onClick={() => cancelOne(r.id)}
+                          disabled={
+                            busyCancel[r.id] ||
+                            r.status === "canceled" ||
+                            r.status === "done"
+                          }
+                          className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm disabled:opacity-50 hover:bg-zinc-50"
+                        >
+                          {busyCancel[r.id] ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <span className="w-4 h-4 inline-block">✕</span>
+                          )}
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
