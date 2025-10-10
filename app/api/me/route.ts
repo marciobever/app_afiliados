@@ -1,5 +1,9 @@
+// app/api/me/route.ts
 import { NextResponse } from 'next/server';
-import supabaseServer from '@/lib/supabaseServer'; // default export é a instância
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const runtime = 'nodejs';
 
 const ALLOWED_ORIGINS = [
   'https://seureview.com.br',
@@ -8,8 +12,7 @@ const ALLOWED_ORIGINS = [
 ].filter(Boolean);
 
 function corsHeaders(origin: string | null) {
-  const allow =
-    origin && ALLOWED_ORIGINS.includes(origin) ? origin : (ALLOWED_ORIGINS[0] || '');
+  const allow = origin && ALLOWED_ORIGINS.includes(origin) ? origin : (ALLOWED_ORIGINS[0] || '*');
   return {
     'Access-Control-Allow-Origin': allow,
     'Access-Control-Allow-Credentials': 'true',
@@ -20,42 +23,41 @@ function corsHeaders(origin: string | null) {
 }
 
 export async function OPTIONS(req: Request) {
-  const origin = req.headers.get('origin');
-  return new NextResponse(null, { status: 204, headers: corsHeaders(origin) });
+  return new NextResponse(null, { status: 204, headers: corsHeaders(req.headers.get('origin')) });
 }
 
 export async function GET(req: Request) {
-  const origin = req.headers.get('origin');
-  const headers = corsHeaders(origin);
-
+  const headers = corsHeaders(req.headers.get('origin'));
   try {
-    const sb = supabaseServer; // << aqui estava o problema
-    const { data, error } = await sb.auth.getUser();
+    // ⚠️ import adiado: evita avaliar envs no build
+    const sbMod = await import('@/lib/supabaseServer');
+    const sb: any = (sbMod as any).default ?? (sbMod as any).supabaseServer ?? sbMod;
 
+    if (!sb?.auth?.getUser) {
+      // não explode no build/runtime sem envs
+      return NextResponse.json({ ok: false }, { status: 200, headers });
+    }
+
+    const { data, error } = await sb.auth.getUser();
     if (error || !data?.user) {
       return NextResponse.json({ ok: false }, { status: 200, headers });
     }
 
-    const u = data.user as any;
+    const u: any = data.user;
     const name =
       u?.user_metadata?.name ||
       u?.user_metadata?.full_name ||
       u?.email?.split('@')[0] ||
       'Usuário';
 
-    const avatar_url =
-      u?.user_metadata?.avatar_url ||
-      u?.user_metadata?.picture ||
-      null;
+    const avatar_url = u?.user_metadata?.avatar_url || u?.user_metadata?.picture || null;
 
     return NextResponse.json(
       { ok: true, id: u.id, name, email: u.email ?? null, avatar_url },
       { status: 200, headers }
     );
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: String(e?.message || e) },
-      { status: 200, headers }
-    );
+    // nunca derruba o build
+    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 200, headers });
   }
 }
