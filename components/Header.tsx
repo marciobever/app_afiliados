@@ -1,4 +1,4 @@
-// app/components/Header.tsx  (ou onde fica o Header do APP)
+// app/components/Header.tsx
 "use client";
 
 import Link from "next/link";
@@ -54,39 +54,47 @@ export default function Header({ initialLoggedIn = false }: Props) {
     "px-4 py-2 rounded-lg text-sm bg-[#EE4D2D] hover:bg-[#D8431F] text-white shadow-sm";
   const btnGhost =
     "px-4 py-2 rounded-lg text-sm border border-[#FFD9CF] hover:bg-[#FFF4F0] text-[#111827]";
-
-  // logout com redirecionamento direto (limpa cookie e volta pro site)
-  const sair = () => {
-    window.location.href = `/api/auth/logout?next=${encodeURIComponent(SITE_URL)}`;
-  };
+  const badge =
+    "hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[#FFD9CF] bg-[#FFF4F0] px-2 py-[6px] text-[12px] leading-none text-[#7A2E1B]";
 
   return (
-    <header className="sticky top-0 z-40 bg-white border-b border-[#FFD9CF]">
-      <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-end gap-2">
-        {loggedIn && firstName && (
-          <span
-            className="hidden sm:inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/80 px-3 py-1 text-sm text-[#111827]"
-            title="Sua conta"
-          >
-            <span
-              className="inline-block h-[18px] w-[18px] rounded-full bg-[#EE4D2D]/10 ring-1 ring-[#EE4D2D]/30"
-              aria-hidden="true"
-            />
-            Olá, {firstName}
+    <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-[#FFD9CF]">
+      <div className="mx-auto max-w-7xl px-4 h-14 flex items-center gap-3">
+        {/* Brand (volta pro dashboard) */}
+        <Link href="/dashboard" className="flex items-center gap-2 font-semibold tracking-tight">
+          <span className="inline-grid h-8 w-8 place-items-center rounded-lg bg-[#EE4D2D] text-white font-bold">
+            SR
           </span>
-        )}
+          <span className="hidden xs:inline">SeuReview</span>
+        </Link>
 
-        {loggedIn && (
-          <Link href="/dashboard/configuracoes" className={btnGhost}>
-            Configurações
-          </Link>
-        )}
+        {/* Ações à direita */}
+        <nav className="ml-auto flex flex-wrap items-center gap-2">
+          {loggedIn && firstName && (
+            <span className={badge} title="Sua conta">
+              <span className="inline-block h-4 w-4 rounded-full bg-[#FEC6B8]" />
+              Olá, {firstName}
+            </span>
+          )}
 
-        {loggedIn && (
-          <button onClick={sair} className={btnPrimary} title="Sair da conta">
-            Sair
-          </button>
-        )}
+          {loggedIn && (
+            <>
+              <Link href="/dashboard/perfil" className={btnGhost}>
+                Perfil
+              </Link>
+              <Link href="/dashboard/configuracoes" className={btnGhost}>
+                Configurações
+              </Link>
+              {/* Logout por GET com redirect direto pro site */}
+              <a
+                href={`/api/auth/logout?next=${encodeURIComponent(SITE_URL)}`}
+                className={btnPrimary}
+              >
+                Sair
+              </a>
+            </>
+          )}
+        </nav>
       </div>
     </header>
   );
