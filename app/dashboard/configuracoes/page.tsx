@@ -1,7 +1,19 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { Settings, Store, Network, CheckCircle2, Loader2, Eye, EyeOff } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  Settings,
+  Store,
+  Network,
+  CheckCircle2,
+  Loader2,
+  Eye,
+  EyeOff,
+  ArrowLeft,
+  BookOpenCheck,
+  PlayCircle,
+  ListChecks,
+} from 'lucide-react';
 
 type TabKey = 'plataformas' | 'redes';
 
@@ -12,26 +24,13 @@ function cx(...a: Array<string | false | null | undefined>) {
 function toast(msg: string) {
   alert(msg);
 }
-function normSubIdsFromText(text: string) {
-  return text
-    .split(/\n|,|;/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 5);
-}
-function subIdsToText(list: string[]) {
-  return (list || []).slice(0, 5).join('\n');
-}
 
 /* ---------------------------- UI atoms --------------------------------- */
 function Card(props: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <section
       {...props}
-      className={cx(
-        'rounded-2xl border border-[#FFD9CF] bg-white shadow-sm',
-        props.className
-      )}
+      className={cx('rounded-2xl border border-[#FFD9CF] bg-white shadow-sm', props.className)}
     />
   );
 }
@@ -143,9 +142,7 @@ function Tabs({
             className={cx(
               'px-4 py-3 text-sm font-medium border-r last:border-r-0 transition-colors flex items-center justify-center gap-2',
               'border-[#FFD9CF]',
-              value === t.key
-                ? 'bg-[#EE4D2D] text-white'
-                : 'bg-white text-[#111827] hover:bg-[#FFF4F0]'
+              value === t.key ? 'bg-[#EE4D2D] text-white' : 'bg-white text-[#111827] hover:bg-[#FFF4F0]'
             )}
           >
             {t.icon}
@@ -172,9 +169,7 @@ function ShopeeCredentialsCard() {
     (async () => {
       setLoading(true);
       try {
-        const r = await fetch('/api/integrations/shopee/credentials', {
-          cache: 'no-store',
-        });
+        const r = await fetch('/api/integrations/shopee/credentials', { cache: 'no-store' });
         const j = await r.json();
         if (j?.credentials) {
           setAppId(j.credentials.app_id ?? '');
@@ -233,11 +228,7 @@ function ShopeeCredentialsCard() {
       <CardBody>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="App ID">
-            <Input
-              placeholder="ex.: 1835..."
-              value={appId}
-              onChange={(e) => setAppId(e.target.value)}
-            />
+            <Input placeholder="ex.: 1835..." value={appId} onChange={(e) => setAppId(e.target.value)} />
           </Field>
           <Field label="Secret">
             <div className="relative">
@@ -292,19 +283,31 @@ function ShopeeCredentialsCard() {
   );
 }
 
-/* -------------------------- Shopee SubIDs (corrigido) ------------------- */
+/* -------------------------- Shopee SubIDs ------------------------------- */
 function ShopeeSubIdsCard() {
-  // 🔧 AJUSTE AQUI se sua rota for /api/integrations/shopee/subids
   const SUBIDS_API = '/api/integrations/shopee/subids';
 
   type KnownPlatform =
-    | 'instagram' | 'facebook' | 'x' | 'pinterest' | 'tiktok'
-    | 'youtube' | 'whatsapp' | 'others';
+    | 'instagram'
+    | 'facebook'
+    | 'x'
+    | 'pinterest'
+    | 'tiktok'
+    | 'youtube'
+    | 'whatsapp'
+    | 'others';
 
   const KNOWN: KnownPlatform[] = [
-    'instagram','facebook','x','pinterest','tiktok','youtube','whatsapp','others'
+    'instagram',
+    'facebook',
+    'x',
+    'pinterest',
+    'tiktok',
+    'youtube',
+    'whatsapp',
+    'others',
   ];
-  const LABEL: Record<KnownPlatform,string> = {
+  const LABEL: Record<KnownPlatform, string> = {
     instagram: 'Instagram',
     facebook: 'Facebook',
     x: 'X (Twitter)',
@@ -312,12 +315,15 @@ function ShopeeSubIdsCard() {
     tiktok: 'TikTok',
     youtube: 'YouTube',
     whatsapp: 'WhatsApp',
-    others: 'Outros'
+    others: 'Outros',
   };
   const ALIASES: Record<string, KnownPlatform> = {
-    insta: 'instagram', ig: 'instagram',
-    fb: 'facebook', meta: 'facebook',
-    twitter: 'x', tw: 'x',
+    insta: 'instagram',
+    ig: 'instagram',
+    fb: 'facebook',
+    meta: 'facebook',
+    twitter: 'x',
+    tw: 'x',
     pin: 'pinterest',
     yt: 'youtube',
     wa: 'whatsapp',
@@ -335,20 +341,22 @@ function ShopeeSubIdsCard() {
     default?: string;
   };
 
-  const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState(false);
-  const [error, setError]       = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // estado: mapa plataforma -> subid e fallback
-  const [byPlatform, setByPlatform] = useState<Partial<Record<KnownPlatform,string>>>({});
-  const [defSubid, setDefSubid]     = useState<string>('');
+  const [byPlatform, setByPlatform] = useState<Partial<Record<KnownPlatform, string>>>({});
+  const [defSubid, setDefSubid] = useState<string>('');
   const [platformInput, setPlatformInput] = useState('');
-  const [showAdvanced, setShowAdvanced]   = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // -------- helpers de fetch com erro legível ----------
   async function getJsonOrText(r: Response) {
     const txt = await r.text();
-    try { return JSON.parse(txt); } catch { return { error: txt || `${r.status} ${r.statusText}` }; }
+    try {
+      return JSON.parse(txt);
+    } catch {
+      return { error: txt || `${r.status} ${r.statusText}` };
+    }
   }
 
   useEffect(() => {
@@ -360,10 +368,9 @@ function ShopeeSubIdsCard() {
         if (!r.ok || data?.error) throw new Error(data?.error || `GET ${SUBIDS_API} -> ${r.status}`);
         const payload = (data?.subids || {}) as SubidsPayload;
 
-        // só mostra as plataformas que já existem (não lota a tela de vazio)
-        const current: Partial<Record<KnownPlatform,string>> = {};
+        const current: Partial<Record<KnownPlatform, string>> = {};
         if (payload.by_platform && typeof payload.by_platform === 'object') {
-          Object.entries(payload.by_platform).forEach(([k,v]) => {
+          Object.entries(payload.by_platform).forEach(([k, v]) => {
             const norm = normalizePlatform(k);
             if (norm) current[norm] = String(v || '');
           });
@@ -371,7 +378,7 @@ function ShopeeSubIdsCard() {
         setByPlatform(current);
         setDefSubid(payload.default || '');
         setError(null);
-      } catch (e:any) {
+      } catch (e: any) {
         setError(e?.message || 'Falha ao carregar SubIDs');
       } finally {
         setLoading(false);
@@ -380,18 +387,19 @@ function ShopeeSubIdsCard() {
   }, []);
 
   function addPlatformFromInput() {
-    const norm = normalizePlatform(platformInput);
+    const k = platformInput.trim();
+    const norm = normalizePlatform(k);
     if (!norm) {
       setError('Plataforma inválida. Exemplos: Instagram, Facebook, X, Pinterest…');
       return;
     }
     setError(null);
-    setByPlatform(prev => ({ ...prev, [norm]: prev[norm] ?? '' }));
+    setByPlatform((prev) => ({ ...prev, [norm]: prev[norm] ?? '' }));
     setPlatformInput('');
   }
 
   function removePlatform(k: KnownPlatform) {
-    setByPlatform(prev => {
+    setByPlatform((prev) => {
       const next = { ...prev };
       delete next[k];
       return next;
@@ -399,16 +407,13 @@ function ShopeeSubIdsCard() {
   }
 
   function updateSubid(k: KnownPlatform, val: string) {
-    setByPlatform(prev => ({ ...prev, [k]: val }));
+    setByPlatform((prev) => ({ ...prev, [k]: val }));
   }
 
   async function save() {
     try {
       setSaving(true);
-      const payload: SubidsPayload = {
-        by_platform: byPlatform,
-        default: defSubid || '',
-      };
+      const payload: SubidsPayload = { by_platform: byPlatform, default: defSubid || '' };
       const r = await fetch(SUBIDS_API, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -418,7 +423,7 @@ function ShopeeSubIdsCard() {
       if (!r.ok || data?.error) throw new Error(data?.error || `PUT ${SUBIDS_API} -> ${r.status}`);
       setError(null);
       toast('SubIDs salvos!');
-    } catch (e:any) {
+    } catch (e: any) {
       setError(e?.message || 'Erro ao salvar SubIDs');
       toast(e?.message || 'Erro ao salvar SubIDs');
     } finally {
@@ -445,21 +450,25 @@ function ShopeeSubIdsCard() {
         }
       />
       <CardBody>
-        {/* Input de plataforma */}
         <div className="flex gap-2 mb-3">
           <Input
             placeholder="Digite a plataforma e pressione Enter (ex.: Instagram, Facebook, X)"
             value={platformInput}
             onChange={(e) => setPlatformInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPlatformFromInput(); } }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addPlatformFromInput();
+              }
+            }}
           />
           <Button onClick={addPlatformFromInput}>Adicionar</Button>
         </div>
 
-        {/* Cards por plataforma */}
         {platformsCount === 0 ? (
           <p className="text-sm text-[#6B7280] mb-3">Nenhuma plataforma adicionada ainda.</p>
         ) : null}
+
         <div className="grid gap-3 md:grid-cols-2">
           {Object.entries(byPlatform).map(([k, val]) => {
             const key = k as KnownPlatform;
@@ -475,14 +484,10 @@ function ShopeeSubIdsCard() {
                     remover
                   </button>
                 </div>
-                <Input
-                  placeholder="SubID (opcional)"
-                  value={val || ''}
-                  onChange={(e) => updateSubid(key, e.target.value)}
-                />
+                <Input placeholder="SubID (opcional)" value={val || ''} onChange={(e) => updateSubid(key, e.target.value)} />
                 {showAdvanced && (
                   <p className="mt-1 text-[12px] text-[#6B7280]">
-                    Dica: variáveis avançadas como <code>{'{'}item_id{'}'}</code> e <code>{'{'}exec{'}'}</code> são opcionais.
+                    Dica: variáveis como <code>{'{'}item_id{'}'}</code> e <code>{'{'}exec{'}'}</code> são opcionais.
                   </p>
                 )}
               </div>
@@ -490,25 +495,15 @@ function ShopeeSubIdsCard() {
           })}
         </div>
 
-        {/* SubID padrão */}
         <div className="mt-4">
           <Field label="SubID padrão (fallback)" hint="Usado quando a plataforma não tiver um SubID específico.">
-            <Input
-              placeholder="Ex.: postauto"
-              value={defSubid}
-              onChange={(e) => setDefSubid(e.target.value)}
-            />
+            <Input placeholder="Ex.: postauto" value={defSubid} onChange={(e) => setDefSubid(e.target.value)} />
           </Field>
         </div>
 
-        {/* Avançado + ações */}
         <div className="mt-4 flex items-center justify-between">
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showAdvanced}
-              onChange={(e)=>setShowAdvanced(e.target.checked)}
-            />
+            <input type="checkbox" checked={showAdvanced} onChange={(e) => setShowAdvanced(e.target.checked)} />
             Mostrar opções avançadas (variáveis)
           </label>
 
@@ -642,9 +637,7 @@ function MetaConnect({
 
         {accounts.length > 0 && (
           <div className="mt-4 rounded-xl border border-[#FFD9CF] bg-[#FFF9F7]">
-            <div className="p-3 border-b border-[#FFD9CF] text-sm font-medium">
-              Selecione uma conta Instagram
-            </div>
+            <div className="p-3 border-b border-[#FFD9CF] text-sm font-medium">Selecione uma conta Instagram</div>
             <div className="divide-y divide-[#FFD9CF]">
               {accounts.map((acc) => {
                 const ig = acc.instagram_business_account;
@@ -696,23 +689,155 @@ function MetaConnect({
   );
 }
 
+/* ------------------------------ Tutorial Modal ------------------------- */
+function TutorialModal({
+  open,
+  onClose,
+  goPlataformas,
+  goRedes,
+}: {
+  open: boolean;
+  onClose: () => void;
+  goPlataformas: () => void;
+  goRedes: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center"
+      aria-modal="true"
+      role="dialog"
+    >
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative z-[61] w-full sm:max-w-2xl mx-auto rounded-2xl bg-white border border-[#FFD9CF] shadow-xl">
+        <div className="p-5 border-b border-[#FFD9CF] flex items-center gap-2">
+          <BookOpenCheck className="w-5 h-5 text-[#EE4D2D]" />
+          <h3 className="text-base font-semibold">Tutorial — começo rápido</h3>
+        </div>
+        <div className="p-5 space-y-4">
+          <ol className="space-y-3">
+            <li className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#FFF4F0] text-[#7A2E1B] text-xs font-semibold">
+                1
+              </span>
+              <div>
+                <div className="font-medium">Conecte a Meta / Instagram</div>
+                <p className="text-sm text-[#6B7280]">
+                  Faça login na Meta e selecione seu Instagram Business. Isso libera a publicação.
+                </p>
+                <div className="mt-2">
+                  <Button variant="outline" onClick={goRedes} className="inline-flex items-center gap-2">
+                    <Network className="w-4 h-4" /> Ir para “Redes Sociais”
+                  </Button>
+                </div>
+              </div>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#FFF4F0] text-[#7A2E1B] text-xs font-semibold">
+                2
+              </span>
+              <div>
+                <div className="font-medium">Configure seus SubIDs da Shopee</div>
+                <p className="text-sm text-[#6B7280]">
+                  Defina SubIDs por plataforma para rastrear cliques e comissões automaticamente.
+                </p>
+                <div className="mt-2">
+                  <Button variant="outline" onClick={goPlataformas} className="inline-flex items-center gap-2">
+                    <Store className="w-4 h-4" /> Ir para “Plataformas”
+                  </Button>
+                </div>
+              </div>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#FFF4F0] text-[#7A2E1B] text-xs font-semibold">
+                3
+              </span>
+              <div>
+                <div className="font-medium">Busque produtos e gere legendas</div>
+                <p className="text-sm text-[#6B7280]">
+                  Use o dashboard para descobrir produtos, gerar legendas com IA e preparar o post.
+                </p>
+              </div>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#FFF4F0] text-[#7A2E1B] text-xs font-semibold">
+                4
+              </span>
+              <div>
+                <div className="font-medium">Publique e acompanhe resultados</div>
+                <p className="text-sm text-[#6B7280]">
+                  Publique via Meta e acompanhe cliques/conversões pelos SubIDs e UTM.
+                </p>
+              </div>
+            </li>
+          </ol>
+        </div>
+        <div className="p-5 border-t border-[#FFD9CF] flex flex-col sm:flex-row items-center justify-between gap-3">
+          <a href="/dashboard" className="inline-flex items-center gap-2 text-sm text-[#111827] hover:underline">
+            <PlayCircle className="w-4 h-4" />
+            Ir para o Dashboard
+          </a>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Fechar
+            </Button>
+            <a href="/dashboard/perfil" className="px-4 py-2 rounded-lg text-sm bg-[#EE4D2D] hover:bg-[#D8431F] text-white">
+              Ver meu Perfil
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------ Page ----------------------------------- */
 export default function ConfiguracoesPage() {
   const [tab, setTab] = useState<TabKey>('plataformas');
   const [instagramId, setInstagramId] = useState('');
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+
+  function goBack() {
+    if (typeof window !== 'undefined') {
+      if (window.history.length > 1) window.history.back();
+      else window.location.href = '/dashboard';
+    }
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-4 pb-10 space-y-6">
-      <div className="pt-4 sm:pt-6">
+      {/* Top bar: voltar + tutorial */}
+      <div className="pt-4 sm:pt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <button onClick={goBack} className="inline-flex items-center gap-2 text-sm text-[#111827] hover:underline">
+          <ArrowLeft className="w-4 h-4" />
+          Voltar
+        </button>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setTutorialOpen(true)}
+            className="inline-flex items-center gap-2"
+          >
+            <BookOpenCheck className="w-4 h-4" />
+            Tutorial
+          </Button>
+        </div>
+      </div>
+
+      {/* Título */}
+      <div>
         <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-3">
           <Settings className="w-7 h-7 text-[#EE4D2D]" />
           Configurações
         </h1>
         <p className="text-sm text-[#6B7280] mt-1">
-          Conecte suas plataformas e redes sociais. O que você salvar aqui será usado na busca de produtos e nas publicações.
+          Conecte suas plataformas e redes sociais. O que você salvar aqui será usado na busca de
+          produtos e nas publicações.
         </p>
       </div>
 
+      {/* Tabs */}
       <Tabs
         value={tab}
         onChange={setTab}
@@ -722,6 +847,7 @@ export default function ConfiguracoesPage() {
         ]}
       />
 
+      {/* Conteúdo */}
       {tab === 'plataformas' ? (
         <div className="grid gap-6">
           <ShopeeCredentialsCard />
@@ -729,10 +855,7 @@ export default function ConfiguracoesPage() {
         </div>
       ) : (
         <div className="grid gap-6">
-          <MetaConnect
-            onSelect={(id) => setInstagramId(id)}
-            onSaved={(id) => setInstagramId(id)}
-          />
+          <MetaConnect onSelect={(id) => setInstagramId(id)} onSaved={(id) => setInstagramId(id)} />
           {instagramId ? (
             <Card>
               <CardBody>
@@ -745,6 +868,22 @@ export default function ConfiguracoesPage() {
           ) : null}
         </div>
       )}
+
+      {/* Modal Tutorial */}
+      <TutorialModal
+        open={tutorialOpen}
+        onClose={() => setTutorialOpen(false)}
+        goPlataformas={() => {
+          setTab('plataformas');
+          setTutorialOpen(false);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        goRedes={() => {
+          setTab('redes');
+          setTutorialOpen(false);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
     </div>
   );
 }
