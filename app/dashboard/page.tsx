@@ -2,14 +2,24 @@
 "use client";
 
 import * as React from "react";
-import { SectionHeader } from "@/components/ui";
+import { SectionHeader, Card } from "@/components/ui";
 import PlatformCard from "@/components/PlatformCard";
 import { PLATFORMS } from "@/components/brands";
 import { SERVICES } from "@/components/services";
 import ServiceCard from "@/components/ServiceCard";
 
+/* --- KPI card simples (tema claro) --- */
+function StatCard({ label, value, loading }: { label: string; value?: number | string; loading?: boolean }) {
+  return (
+    <Card className="p-4">
+      <div className="text-xs text-[#6B7280]">{label}</div>
+      <div className="mt-1 text-2xl font-semibold">{loading ? "…" : value ?? 0}</div>
+    </Card>
+  );
+}
+
 export default function DashboardHome() {
-  const [summary, setSummary] = React.useState<{ [k: string]: number } | null>(null);
+  const [summary, setSummary] = React.useState<Record<string, number> | null>(null);
 
   React.useEffect(() => {
     let alive = true;
@@ -18,69 +28,72 @@ export default function DashboardHome() {
         const res = await fetch("/api/dashboard/services/summary", { cache: "no-store" });
         const j = await res.json();
         if (alive && j?.ok) setSummary(j);
-      } catch { setSummary(null); }
+      } catch {
+        setSummary(null);
+      }
     })();
     return () => { alive = false; };
   }, []);
 
   return (
-    <div className="relative mx-auto max-w-6xl px-2 pb-10 text-white">
-      {/* hero simples no dark */}
-      <header className="pt-1 sm:pt-2">
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-          <span className="bg-gradient-to-r from-[#FFB199] via-[#FF7A59] to-[#A78BFA] bg-clip-text text-transparent">
-            Painel de operações
-          </span>
-        </h1>
-        <p className="mt-1 text-sm text-white/70">
-          Gerencie seus canais e ferramentas de automação em um só lugar.
-        </p>
-      </header>
+    <div className="pb-12">
+      {/* Cabeçalho padrão */}
+      <SectionHeader
+        emoji="🧭"
+        title="Painel de operações"
+        subtitle="Acompanhe métricas, conecte plataformas e acesse os serviços."
+      />
+
+      {/* Resumo (KPIs) */}
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Cliques" value={summary?.clicks} loading={!summary} />
+        <StatCard label="Links" value={summary?.links} loading={!summary} />
+        <StatCard label="Watchlists" value={summary?.watches} loading={!summary} />
+        <StatCard label="Preços monitorados" value={summary?.prices} loading={!summary} />
+      </div>
 
       {/* Plataformas */}
       <SectionHeader
         emoji="🧭"
-        title={<span className="text-white">Escolha a plataforma</span>}
-        subtitle={<span className="text-white/70">Conecte e gerencie conteúdos de cada marketplace/rede.</span>}
+        title="Escolha a plataforma"
+        subtitle="Conecte e gerencie conteúdos de cada marketplace/rede."
       />
-      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {PLATFORMS.map((p) => (
           <PlatformCard key={p.key} p={p} />
         ))}
       </div>
 
       {/* Serviços */}
-      <div className="mt-10 rounded-[28px] border border-white/10 bg-white/[0.04] px-3 py-6 backdrop-blur-xl sm:px-5">
-        <SectionHeader
-          emoji="💎"
-          title={<span className="text-white">Serviços</span>}
-          subtitle={<span className="text-white/70">Ferramentas internas com automação, monitoramento e tracking.</span>}
-        />
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {SERVICES.map((s) => (
-            <ServiceCard
-              key={s.key}
-              title={s.title}
-              desc={s.desc}
-              href={s.href}
-              setupHref={s.setupHref}
-              emoji={s.emoji}
-              metrics={
-                s.key === "links"
-                  ? [
-                      { label: "Links", value: summary?.links ?? 0, loading: !summary },
-                      { label: "Cliques", value: summary?.clicks ?? 0, loading: !summary },
-                    ]
-                  : s.key === "price-tracker"
-                  ? [
-                      { label: "Watchlists", value: summary?.watches ?? 0, loading: !summary },
-                      { label: "Preços", value: summary?.prices ?? 0, loading: !summary },
-                    ]
-                  : []
-              }
-            />
-          ))}
-        </div>
+      <SectionHeader
+        emoji="🧰"
+        title="Serviços"
+        subtitle="Ferramentas internas para automação e tracking."
+      />
+      <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+        {SERVICES.map((s) => (
+          <ServiceCard
+            key={s.key}
+            title={s.title}
+            desc={s.desc}
+            href={s.href}
+            setupHref={s.setupHref}
+            emoji={s.emoji}
+            metrics={
+              s.key === "links"
+                ? [
+                    { label: "Links", value: summary?.links ?? 0, loading: !summary },
+                    { label: "Cliques", value: summary?.clicks ?? 0, loading: !summary },
+                  ]
+                : s.key === "price-tracker"
+                ? [
+                    { label: "Watchlists", value: summary?.watches ?? 0, loading: !summary },
+                    { label: "Preços", value: summary?.prices ?? 0, loading: !summary },
+                  ]
+                : []
+            }
+          />
+        ))}
       </div>
     </div>
   );
