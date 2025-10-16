@@ -6,7 +6,6 @@ import { SectionHeader } from "@/components/ui";
 import PlatformCard from "@/components/PlatformCard";
 import { PLATFORMS } from "@/components/brands";
 
-// 👇 novos imports
 import { SERVICES } from "@/components/services";
 import ServiceCard from "@/components/ServiceCard";
 
@@ -22,13 +21,10 @@ export default function DashboardHome() {
         const j = await res.json();
         if (alive && j?.ok) setSummary(j);
       } catch {
-        // mantém a UI, só não mostra números
         setSummary(null);
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
   return (
@@ -37,9 +33,7 @@ export default function DashboardHome() {
       <div
         aria-hidden
         className="pointer-events-none select-none absolute inset-x-0 -top-8 h-28 -z-10"
-        style={{
-          background: "radial-gradient(80% 120% at 0% 0%, #FFF4F0 0%, transparent 70%)",
-        }}
+        style={{ background: "radial-gradient(80% 120% at 0% 0%, #FFF4F0 0%, transparent 70%)" }}
       />
 
       {/* Plataformas */}
@@ -69,7 +63,7 @@ export default function DashboardHome() {
             href={s.href}
             setupHref={s.setupHref}
             emoji={s.emoji}
-            isNew={s.isNew}
+            /* isNew removido */
             metrics={
               s.key === "links"
                 ? [
