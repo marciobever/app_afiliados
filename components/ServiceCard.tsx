@@ -12,7 +12,7 @@ export default function ServiceCard({
   setupHref,
   emoji = "🧩",
   tag,              // "novo" | "premium" | "beta"
-  isNew,            // <- retrocompat: se vier, vira tag="novo"
+  isNew,            // retrocompat: se vier, vira tag="novo"
   metrics = [],
 }: {
   title: string;
@@ -21,7 +21,7 @@ export default function ServiceCard({
   setupHref?: string;
   emoji?: string;
   tag?: "novo" | "premium" | "beta";
-  isNew?: boolean;                // <— adicionado para compatibilidade
+  isNew?: boolean;
   metrics?: Metric[];
 }) {
   const effectiveTag = tag ?? (isNew ? "novo" : undefined);
@@ -29,14 +29,12 @@ export default function ServiceCard({
 
   return (
     <Card className="group relative rounded-3xl border border-[#ffd9cf]/40 bg-white/80 p-6 shadow-md backdrop-blur-sm transition hover:-translate-y-0.5 hover:shadow-lg">
-      {/* tag */}
       {effectiveTag && (
         <div className="absolute right-4 top-4">
           <Badge tone={tagTone as any}>{effectiveTag}</Badge>
         </div>
       )}
 
-      {/* header */}
       <div className="flex items-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FFF4F0] text-xl text-[#EE4D2D]">
           {emoji}
@@ -47,7 +45,6 @@ export default function ServiceCard({
         </div>
       </div>
 
-      {/* métricas */}
       {!!metrics.length && (
         <div className="mt-4 grid grid-cols-2 gap-2">
           {metrics.map((m, i) => (
@@ -59,7 +56,6 @@ export default function ServiceCard({
         </div>
       )}
 
-      {/* ações */}
       <div className="mt-5 flex gap-2">
         <Link
           href={href}
