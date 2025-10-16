@@ -11,7 +11,8 @@ export default function ServiceCard({
   href,
   setupHref,
   emoji = "🧩",
-  tag,
+  tag,              // "novo" | "premium" | "beta"
+  isNew,            // <- retrocompat: se vier, vira tag="novo"
   metrics = [],
 }: {
   title: string;
@@ -20,20 +21,22 @@ export default function ServiceCard({
   setupHref?: string;
   emoji?: string;
   tag?: "novo" | "premium" | "beta";
+  isNew?: boolean;                // <— adicionado para compatibilidade
   metrics?: Metric[];
 }) {
-  const tagTone = tag === "novo" || tag === "premium" ? "success" : "muted";
+  const effectiveTag = tag ?? (isNew ? "novo" : undefined);
+  const tagTone = effectiveTag === "novo" || effectiveTag === "premium" ? "success" : "muted";
 
   return (
     <Card className="group relative rounded-3xl border border-[#ffd9cf]/40 bg-white/80 p-6 shadow-md backdrop-blur-sm transition hover:-translate-y-0.5 hover:shadow-lg">
       {/* tag */}
-      {tag && (
+      {effectiveTag && (
         <div className="absolute right-4 top-4">
-          <Badge tone={tagTone as any}>{tag}</Badge>
+          <Badge tone={tagTone as any}>{effectiveTag}</Badge>
         </div>
       )}
 
-      {/* header com ícone em chip */}
+      {/* header */}
       <div className="flex items-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FFF4F0] text-xl text-[#EE4D2D]">
           {emoji}
@@ -44,18 +47,13 @@ export default function ServiceCard({
         </div>
       </div>
 
-      {/* métricas compactas */}
+      {/* métricas */}
       {!!metrics.length && (
         <div className="mt-4 grid grid-cols-2 gap-2">
           {metrics.map((m, i) => (
-            <div
-              key={i}
-              className="rounded-xl border border-[#ffd9cf]/50 px-3 py-2"
-            >
+            <div key={i} className="rounded-xl border border-[#ffd9cf]/50 px-3 py-2">
               <div className="text-xs text-[#6B7280]">{m.label}</div>
-              <div className="text-base font-semibold">
-                {m.loading ? "…" : m.value}
-              </div>
+              <div className="text-base font-semibold">{m.loading ? "…" : m.value}</div>
             </div>
           ))}
         </div>
