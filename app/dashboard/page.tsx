@@ -18,55 +18,45 @@ export default function DashboardHome() {
         const res = await fetch("/api/dashboard/services/summary", { cache: "no-store" });
         const j = await res.json();
         if (alive && j?.ok) setSummary(j);
-      } catch {
-        setSummary(null);
-      }
+      } catch { setSummary(null); }
     })();
     return () => { alive = false; };
   }, []);
 
   return (
-    <div className="relative mx-auto max-w-6xl px-4 pb-16">
-      {/* HERO premium */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 -top-14 h-48 -z-10"
-        style={{
-          background:
-            "radial-gradient(120% 120% at 0% 0%, #FFF4F0 0%, rgba(255,244,240,0) 60%), radial-gradient(60% 80% at 100% 0%, #FFE9E2 0%, rgba(255,233,226,0) 65%)",
-        }}
-      />
-      <div className="pt-4 sm:pt-6">
-        <h1 className="text-3xl sm:text-[32px] font-extrabold tracking-tight">
-          <span className="bg-gradient-to-r from-[#EE4D2D] to-[#FF9D7E] bg-clip-text text-transparent">
+    <div className="relative mx-auto max-w-6xl px-2 pb-10 text-white">
+      {/* hero simples no dark */}
+      <header className="pt-1 sm:pt-2">
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+          <span className="bg-gradient-to-r from-[#FFB199] via-[#FF7A59] to-[#A78BFA] bg-clip-text text-transparent">
             Painel de operações
           </span>
         </h1>
-        <p className="mt-1 text-sm text-[#6B7280]">
+        <p className="mt-1 text-sm text-white/70">
           Gerencie seus canais e ferramentas de automação em um só lugar.
         </p>
-      </div>
+      </header>
 
       {/* Plataformas */}
       <SectionHeader
         emoji="🧭"
-        title="Escolha a plataforma"
-        subtitle="Conecte e gerencie conteúdos de cada marketplace/rede."
+        title={<span className="text-white">Escolha a plataforma</span>}
+        subtitle={<span className="text-white/70">Conecte e gerencie conteúdos de cada marketplace/rede.</span>}
       />
-      <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {PLATFORMS.map((p) => (
           <PlatformCard key={p.key} p={p} />
         ))}
       </div>
 
-      {/* Serviços com fundo diferenciado */}
-      <section className="mt-12 rounded-[28px] bg-gradient-to-b from-[#FFF9F7] to-white px-3 py-8 sm:px-5">
+      {/* Serviços */}
+      <div className="mt-10 rounded-[28px] border border-white/10 bg-white/[0.04] px-3 py-6 backdrop-blur-xl sm:px-5">
         <SectionHeader
           emoji="💎"
-          title="Serviços"
-          subtitle="Ferramentas internas com automação, monitoramento e tracking."
+          title={<span className="text-white">Serviços</span>}
+          subtitle={<span className="text-white/70">Ferramentas internas com automação, monitoramento e tracking.</span>}
         />
-        <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {SERVICES.map((s) => (
             <ServiceCard
               key={s.key}
@@ -91,7 +81,7 @@ export default function DashboardHome() {
             />
           ))}
         </div>
-      </section>
+      </div>
     </div>
   );
 }
