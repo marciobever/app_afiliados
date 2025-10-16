@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Home, Link2, LineChart, Store, Settings } from "lucide-react";
+import { Bot, Home, Link2, LineChart, Store, Settings, Handshake } from "lucide-react";
 
 const NAV = [
   { href: "/dashboard", icon: Home, label: "Visão geral" },
+  { href: "/dashboard/afiliados", icon: Handshake, label: "Afiliados" },              // 👈 novo
   { href: "/dashboard/bots/instagram", icon: Bot, label: "Bots Instagram" },
   { href: "/dashboard/links", icon: Link2, label: "SmartLinks" },
   { href: "/dashboard/price-tracker", icon: LineChart, label: "WatchHub" },
   { href: "/dashboard/shopee", icon: Store, label: "Shopee" },
-  // 👇 caminho correto
-  { href: "/dashboard/configuracoes", icon: Settings, label: "Configurações" },
+  { href: "/dashboard/configuracoes", icon: Settings, label: "Configurações" },       // 👈 correto
 ];
 
 export default function Sidebar() {
