@@ -1,11 +1,20 @@
 // app/api/bots/ig/test/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
-export async function POST(req: NextRequest) {
-  const N8N_BASE_URL = process.env.N8N_BASE_URL!;
-  const WEBHOOK_PATH = process.env.N8N_IG_WEBHOOK_PATH || "ig/verify";
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const revalidate = 0;
 
-  const body = await req.json().catch(() => ({}));
+export async function POST(req: NextRequest) {
+  const base = process.env.N8N_BASE_URL;
+  const webhookPath = process.env.N8N_IG_WEBHOOK_PATH || "ig/verify";
+
+  // caso ainda não configurado, não quebra
+  if (!base) {
+    return NextResponse.json({ ok: false, error: "N8N_BASE_URL ausente" }, { status: 200 });
+  }
+
+  const body = await req.json().catch(() => ({} as any));
   const sample = body.sample ?? {
     entry: [
       {
@@ -18,19 +27,20 @@ export async function POST(req: NextRequest) {
               comment_id: "17999999999999999",
               media_id: body.mediaId || "17900000000000000",
               text: body.text || "quero",
-              from: { id: "1234567890" }
-            }
-          }
-        ]
-      }
-    ]
+              from: { id: "1234567890" },
+            },
+          },
+        ],
+      },
+    ],
   };
 
-  const url = `${N8N_BASE_URL.replace(/\/+$/,"")}/webhook/${WEBHOOK_PATH}`;
-  const res = await fetch(url, {
+  const url = new URL(`/webhook/${webhookPath}`, base);
+  const res = await fetch(url.toString(), {
     method: "POST",
-    headers: { "Content-Type":"application/json" },
-    body: JSON.stringify(sample)
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(sample),
+    cache: "no-store",
   });
 
   const txt = await res.text();
